@@ -3,9 +3,9 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import gym
+import gymnasium as gym
 import torch as th
-from gym import spaces
+from gymnasium import spaces
 from torch import nn
 from torch.distributions import Bernoulli, Categorical, Normal
 

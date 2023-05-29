@@ -1,7 +1,7 @@
 from typing import Dict
 
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
 
 from stable_baselines3.common.vec_env import VecEnv, VecEnvWrapper
 

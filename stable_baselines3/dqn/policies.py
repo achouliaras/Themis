@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Type
 
-import gymnasium
+import gymnasium as gym
 import torch as th
 from torch import nn
 

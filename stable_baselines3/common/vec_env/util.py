@@ -4,7 +4,7 @@ Helpers for dealing with vectorized environments.
 from collections import OrderedDict
 from typing import Any, Dict, List, Tuple
 
-import gym
+import gymnasium as gym
 import numpy as np
 
 from stable_baselines3.common.vec_env.base_vec_env import VecEnvObs

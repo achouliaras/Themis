@@ -5,7 +5,7 @@ from collections import deque
 from itertools import zip_longest
 from typing import Iterable, Optional, Union
 
-import gym
+import gymnasium as gym
 import numpy as np
 import torch as th
 

@@ -1,7 +1,7 @@
 import os
 from typing import Callable
 
-from gym.wrappers.monitoring import video_recorder
+from gymnasium.wrappers.monitoring import video_recorder
 
 from stable_baselines3.common import logger
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvObs, VecEnvStepReturn, VecEnvWrapper

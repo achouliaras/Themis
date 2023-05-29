@@ -2,8 +2,8 @@ from collections import OrderedDict
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
-from gym import GoalEnv, spaces
-from gym.envs.registration import EnvSpec
+from gymnasium import GoalEnv, spaces
+from gymnasium.envs.registration import EnvSpec
 
 from stable_baselines3.common.type_aliases import GymStepReturn
 

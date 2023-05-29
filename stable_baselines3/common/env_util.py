@@ -1,7 +1,7 @@
 import os
 from typing import Any, Callable, Dict, Optional, Type, Union
 
-import gym
+import gymnasium as gym
 import utils
 
 from stable_baselines3.common.atari_wrappers import AtariWrapper

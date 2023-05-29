@@ -1,9 +1,9 @@
 import warnings
 from typing import Union
 
-import gym
+import gymnasium as gym
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
 
 from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan
 

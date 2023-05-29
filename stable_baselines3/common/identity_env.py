@@ -1,8 +1,8 @@
 from typing import Optional, Union
 
 import numpy as np
-from gym import Env, Space
-from gym.spaces import Box, Discrete, MultiBinary, MultiDiscrete
+from gymnasium import Env, Space
+from gymnasium.spaces import Box, Discrete, MultiBinary, MultiDiscrete
 
 from stable_baselines3.common.type_aliases import GymObs, GymStepReturn
 

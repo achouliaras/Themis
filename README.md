@@ -1,8 +1,3 @@
-# B-Pref
-
-Official codebase for [B-Pref: Benchmarking Preference-BasedReinforcement Learning](https://openreview.net/forum?id=ps95-mkHF_) contains scripts to reproduce experiments.
-
-
 ## Install
 
 ```

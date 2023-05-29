@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
 import cloudpickle
-import gym
+import gymnasium as gym
 import numpy as np
 
 from stable_baselines3.common import logger

@@ -1,4 +1,4 @@
-from gym import Env
+from gymnasium import Env
 
 
 class ProxyEnv(Env):
