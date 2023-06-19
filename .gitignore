@@ -1,6 +1,7 @@
 *.swp
 *.pyc
 *.pkl
+*.pt
 *.py~
 *.bak
 .pytest_cache
@@ -15,6 +16,11 @@ _build/
 *.pth
 .pytype/
 git_rewrite_commit_history.sh
+d:/
+eval.csv
+outputs/
+tb/
+train.csv
 
 # Setuptools distribution and build folders.
 /dist/

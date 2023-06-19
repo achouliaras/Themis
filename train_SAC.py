@@ -179,7 +179,7 @@ class Workspace(object):
 
         self.agent.save(self.work_dir, self.step)
         
-@hydra.main(config_path='config/train.yaml', strict=True)
+@hydra.main(version_base=None, config_path="config", config_name='train')
 def main(cfg):
     workspace = Workspace(cfg)
     workspace.run()

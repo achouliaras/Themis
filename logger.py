@@ -9,8 +9,8 @@ import numpy as np
 from termcolor import colored
 
 COMMON_TRAIN_FORMAT = [
-    ('episode', 'E', 'int'),
-    ('step', 'S', 'int'),
+    ('episode', 'Eps', 'int'),
+    ('step', 'Step', 'int'),
     ('episode_reward', 'R', 'float'),
     ('true_episode_reward', 'TR', 'float'), 
     ('total_feedback', 'TF', 'int'),
@@ -36,7 +36,7 @@ AGENT_TRAIN_FORMAT = {
         ('critic_loss', 'CLOSS', 'float'),
         ('alpha_loss', 'TLOSS', 'float'),
         ('alpha_value', 'TVAL', 'float'),
-        ('actor_entropy', 'AENT', 'float'),
+        ('actor_entropy', 'AENTR', 'float'),
         ('bc_loss', 'BCLOSS', 'float'),
     ],
     'ppo': [

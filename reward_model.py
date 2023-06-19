@@ -13,7 +13,7 @@ import time
 
 from scipy.stats import norm
 
-device = 'cuda'
+device = 'cpu'
 
 def gen_net(in_size=1, out_size=1, H=128, n_layers=3, activation='tanh'):
     net = []
@@ -105,11 +105,12 @@ class RewardModel:
         self.size_segment = size_segment
         
         self.capacity = int(capacity)
-        self.buffer_seg1 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=np.float32)
-        self.buffer_seg2 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=np.float32)
+        self.buffer_seg1 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=float)
+        self.buffer_seg2 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=float)
         self.buffer_label = np.empty((self.capacity, 1), dtype=np.float32)
         self.buffer_index = 0
         self.buffer_full = False
+        self.buffer_traj_lens = []
                 
         self.construct_ensemble()
         self.inputs = []
@@ -165,22 +166,22 @@ class RewardModel:
             
         self.opt = torch.optim.Adam(self.paramlst, lr = self.lr)
             
-    def add_data(self, obs, act, rew, done):
+    def add_data(self, obs, act, rew, terminated, truncated):
         sa_t = np.concatenate([obs, act], axis=-1)
         r_t = rew
         
         flat_input = sa_t.reshape(1, self.da+self.ds)
         r_t = np.array(r_t)
         flat_target = r_t.reshape(1, 1)
-
+        
         init_data = len(self.inputs) == 0
         if init_data:
             self.inputs.append(flat_input)
             self.targets.append(flat_target)
-        elif done:
+        elif terminated or truncated:
             self.inputs[-1] = np.concatenate([self.inputs[-1], flat_input])
             self.targets[-1] = np.concatenate([self.targets[-1], flat_target])
-            # FIFO
+            # FIFO on overflow
             if len(self.inputs) > self.max_size:
                 self.inputs = self.inputs[1:]
                 self.targets = self.targets[1:]
@@ -244,7 +245,7 @@ class RewardModel:
 
     def r_hat_member(self, x, member=-1):
         # the network parameterizes r hat in eqn 1 from the paper
-        return self.ensemble[member](torch.from_numpy(x).float().to(device))
+        return self.ensemble[member](torch.from_numpy(x).float().to(device)) #Here lie the secrets
 
     def r_hat(self, x):
         # they say they average the rewards from each member of the ensemble, but I think this only makes sense if the rewards are already normalized
@@ -309,44 +310,62 @@ class RewardModel:
         ensemble_acc = ensemble_acc / total
         return np.mean(ensemble_acc)
     
-    def get_queries(self, mb_size=20):
-        len_traj, max_len = len(self.inputs[0]), len(self.inputs)
-        img_t_1, img_t_2 = None, None
-        
+    def get_queries(self, mb_size=20, first_flag=0):
+        input_lengths = [len(x) for x in self.inputs]       # lenght of each trajectory
+
+        if len(input_lengths)==1:
+            len_traj = input_lengths[0]
+        else:
+            input_lengths.pop()
+            len_traj = min(input_lengths)       #instead of using the 1st traj length find the minimum
+
+        max_len = len(self.inputs)
         if len(self.inputs[-1]) < len_traj:
-            max_len = max_len - 1
-        
+            max_len = max_len - 1           # do not consider the last trajectory if it is too small
+
+        size_segment=self.size_segment
+        if len_traj < size_segment:         # If you ask for segment smaller than the min traj len
+            size_segment = len_traj-1
+
+        img_t_1, img_t_2 = None, None
+
         # get train traj
-        train_inputs = np.array(self.inputs[:max_len])
-        train_targets = np.array(self.targets[:max_len])
-   
-        batch_index_2 = np.random.choice(max_len, size=mb_size, replace=True)
-        sa_t_2 = train_inputs[batch_index_2] # Batch x T x dim of s&a
-        r_t_2 = train_targets[batch_index_2] # Batch x T x 1
+        train_inputs = self.inputs[:max_len]    #turn inputs into arrays (minus the last one probably)
+        train_targets = self.targets[:max_len]
+
+        batch_index_2 = np.random.choice(max_len, size=mb_size, replace=True) # sample mp_size of those inputs
+        sa_t_2 = [train_inputs[i] for i in batch_index_2] # mb_size x (Time x dim of s&a)
+        r_t_2 = [train_targets[i] for i in batch_index_2] # mb_size x (Time x 1)
         
         batch_index_1 = np.random.choice(max_len, size=mb_size, replace=True)
-        sa_t_1 = train_inputs[batch_index_1] # Batch x T x dim of s&a
-        r_t_1 = train_targets[batch_index_1] # Batch x T x 1
-                
-        sa_t_1 = sa_t_1.reshape(-1, sa_t_1.shape[-1]) # (Batch x T) x dim of s&a
-        r_t_1 = r_t_1.reshape(-1, r_t_1.shape[-1]) # (Batch x T) x 1
-        sa_t_2 = sa_t_2.reshape(-1, sa_t_2.shape[-1]) # (Batch x T) x dim of s&a
-        r_t_2 = r_t_2.reshape(-1, r_t_2.shape[-1]) # (Batch x T) x 1
+        sa_t_1 = [train_inputs[i] for i in batch_index_1] # mb_size x (Time x dim of s&a)
+        r_t_1 = [train_targets[i] for i in batch_index_1] # mb_size x (Time x 1)
 
         # Generate time index 
-        time_index = np.array([list(range(i*len_traj,
-                                            i*len_traj+self.size_segment)) for i in range(mb_size)])
-        time_index_2 = time_index + np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
-        time_index_1 = time_index + np.random.choice(len_traj-self.size_segment, size=mb_size, replace=True).reshape(-1,1)
-        
-        sa_t_1 = np.take(sa_t_1, time_index_1, axis=0) # Batch x size_seg x dim of s&a
-        r_t_1 = np.take(r_t_1, time_index_1, axis=0) # Batch x size_seg x 1
-        sa_t_2 = np.take(sa_t_2, time_index_2, axis=0) # Batch x size_seg x dim of s&a
-        r_t_2 = np.take(r_t_2, time_index_2, axis=0) # Batch x size_seg x 1
-                
-        return sa_t_1, sa_t_2, r_t_1, r_t_2
+        #time_index = np.array([list(range(i*len_traj, i*len_traj+size_segment)) for i in range(mb_size)])
+        time_index = np.array([list(range(size_segment)) for i in range(mb_size)])
+        #print('PRINT: ', time_index)
 
-    def put_queries(self, sa_t_1, sa_t_2, labels):
+        time_index_2, time_index_1 = np.zeros((2, mb_size, size_segment),dtype=int)
+        for i in range(mb_size):
+            duration2 =len(sa_t_2[i])
+            duration1 =len(sa_t_1[i])
+            shift2 = np.random.choice(duration2-size_segment)
+            shift1 = np.random.choice(duration1-size_segment)
+            
+            time_index_2[i] = time_index[i] + shift2 
+            time_index_1[i] = time_index[i] + shift1
+            
+            sa_t_2[i] = np.take(sa_t_2[i], time_index_2[i], axis=0) # Batch[i] x (size_seg x dim of s&a)
+            r_t_2[i] = np.take(r_t_2[i], time_index_2[i], axis=0) # Batch[i] x (size_seg x 1)
+            sa_t_1[i] = np.take(sa_t_1[i], time_index_1[i], axis=0) # Batch[i] x (size_seg x dim of s&a)
+            r_t_1[i] = np.take(r_t_1[i], time_index_1[i], axis=0) # Batch[i] x (size_seg x 1)
+        
+        print(np.array(sa_t_1).shape)
+
+        return np.array(sa_t_1), np.array(sa_t_2), np.array(r_t_1), np.array(r_t_2), size_segment
+
+    def put_queries(self, sa_t_1, sa_t_2, traj_len, labels):
         total_sample = sa_t_1.shape[0]
         next_index = self.buffer_index + total_sample
         if next_index >= self.capacity:
@@ -355,12 +374,14 @@ class RewardModel:
             np.copyto(self.buffer_seg1[self.buffer_index:self.capacity], sa_t_1[:maximum_index])
             np.copyto(self.buffer_seg2[self.buffer_index:self.capacity], sa_t_2[:maximum_index])
             np.copyto(self.buffer_label[self.buffer_index:self.capacity], labels[:maximum_index])
+            self.buffer_traj_lens.extend([traj_len for i in range(maximum_index)])
 
             remain = total_sample - (maximum_index)
             if remain > 0:
                 np.copyto(self.buffer_seg1[0:remain], sa_t_1[maximum_index:])
                 np.copyto(self.buffer_seg2[0:remain], sa_t_2[maximum_index:])
                 np.copyto(self.buffer_label[0:remain], labels[maximum_index:])
+                self.buffer_traj_lens.extend([traj_len for i in range(remain)])
 
             self.buffer_index = remain
         else:
@@ -368,11 +389,14 @@ class RewardModel:
             np.copyto(self.buffer_seg2[self.buffer_index:next_index], sa_t_2)
             np.copyto(self.buffer_label[self.buffer_index:next_index], labels)
             self.buffer_index = next_index
+            self.buffer_traj_lens.extend([traj_len for i in range(total_sample)])
             
     def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
-        sum_r_t_1 = np.sum(r_t_1, axis=1)
-        sum_r_t_2 = np.sum(r_t_2, axis=1)
+        sum_r_t_1 = np.sum(r_t_1, axis=0)
+        sum_r_t_2 = np.sum(r_t_2, axis=0)
         
+        # HUMAN Feedback???
+
         # skip the query
         if self.teacher_thres_skip > 0: 
             max_r_t = np.maximum(sum_r_t_1, sum_r_t_2)
@@ -391,14 +415,14 @@ class RewardModel:
         margin_index = (np.abs(sum_r_t_1 - sum_r_t_2) < self.teacher_thres_equal).reshape(-1)
         
         # perfectly rational
-        seg_size = r_t_1.shape[1]
+        seg_size = r_t_1.shape[0]
         temp_r_t_1 = r_t_1.copy()
         temp_r_t_2 = r_t_2.copy()
         for index in range(seg_size-1):
-            temp_r_t_1[:,:index+1] *= self.teacher_gamma
-            temp_r_t_2[:,:index+1] *= self.teacher_gamma
-        sum_r_t_1 = np.sum(temp_r_t_1, axis=1)
-        sum_r_t_2 = np.sum(temp_r_t_2, axis=1)
+            temp_r_t_1[:index+1] *= self.teacher_gamma
+            temp_r_t_2[:index+1] *= self.teacher_gamma
+        sum_r_t_1 = np.sum(temp_r_t_1, axis=0)
+        sum_r_t_2 = np.sum(temp_r_t_2, axis=0)
             
         rational_labels = 1*(sum_r_t_1 < sum_r_t_2)
         if self.teacher_beta > 0: # Bradley-Terry rational model
@@ -542,17 +566,15 @@ class RewardModel:
         
         return len(labels)
     
-    def uniform_sampling(self):
+    def uniform_sampling(self, first_flag=0):
         # get queries
-        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
-            mb_size=self.mb_size)
+        sa_t_1, sa_t_2, r_t_1, r_t_2 , traj_len=  self.get_queries(mb_size=self.mb_size, first_flag=first_flag)
             
         # get labels
-        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-            sa_t_1, sa_t_2, r_t_1, r_t_2)
+        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(sa_t_1, sa_t_2, r_t_1, r_t_2)
         
         if len(labels) > 0:
-            self.put_queries(sa_t_1, sa_t_2, labels)
+            self.put_queries(sa_t_1, sa_t_2, traj_len, labels)
         
         return len(labels)
     

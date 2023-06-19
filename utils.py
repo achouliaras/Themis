@@ -5,8 +5,6 @@ import gymnasium as gym
 import os
 import random
 import math
-import metaworld
-import metaworld.envs.mujoco.env_dict as _env_dict
 
 from collections import deque
 from gymnasium.wrappers.time_limit import TimeLimit
@@ -59,35 +57,50 @@ def tie_weights(src, trg):
     trg.weight = src.weight
     trg.bias = src.bias
     
-def make_metaworld_env(cfg):
-    env_name = cfg.env.replace('metaworld_','')
-    if env_name in _env_dict.ALL_V2_ENVIRONMENTS:
-        env_cls = _env_dict.ALL_V2_ENVIRONMENTS[env_name]
-    else:
-        env_cls = _env_dict.ALL_V1_ENVIRONMENTS[env_name]
+def make_control_env(cfg, render_mode=None):
+    """Helper function to create mujoco environment"""
+    id = cfg.env.split('/')[1:][0]
+    env = gym.make(id=id, render_mode=None)
+    eval_env =  gym.make(id=id, render_mode=render_mode)       
+    #env._freeze_rand_vec = False
+    #env._set_task_called = True
+    #env.seed(cfg.seed) #ADDED TO RESET
     
-    env = env_cls()
-    
-    env._freeze_rand_vec = False
-    env._set_task_called = True
-    env.seed(cfg.seed)
-    
-    return TimeLimit(NormalizedBoxEnv(env), env.max_path_length)
+    return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
 
-def ppo_make_metaworld_env(env_id, seed):
-    env_name = env_id.replace('metaworld_','')
-    if env_name in _env_dict.ALL_V2_ENVIRONMENTS:
-        env_cls = _env_dict.ALL_V2_ENVIRONMENTS[env_name]
-    else:
-        env_cls = _env_dict.ALL_V1_ENVIRONMENTS[env_name]
+def ppo_make_control_env(env_name, render_mode=None):
+    # NORMAL ARGS NO HYDRA    
+    env = gym.make(id=env_name, 
+                   render_mode=render_mode)
     
-    env = env_cls()
+    #env._freeze_rand_vec = False
+    #env._set_task_called = True
+    #env.seed(seed) ADDED TO RESET
     
-    env._freeze_rand_vec = False
-    env._set_task_called = True
-    env.seed(seed)
-    
-    return TimeLimit(env, env.max_path_length)
+    return TimeLimit(env, env.max_episode_steps)
+
+def make_atari_env(cfg, render_mode=None):
+    """Helper function to create atari environment"""
+    env = gym.make(id=cfg.env, 
+                   mode=cfg.mode, 
+                   difficulty=cfg.difficulty, 
+                   obs_type=cfg.obs_type, 
+                   frameskip = cfg.frameskip,
+                   repeat_action_probability=cfg.repeat_action_probability,
+                   full_action_space=cfg.full_action_space,
+                   render_mode=None)
+    eval_env =  gym.make(id=cfg.env, 
+                        mode=cfg.mode, 
+                        difficulty=cfg.difficulty, 
+                        obs_type=cfg.obs_type, 
+                        frameskip = cfg.frameskip,
+                        repeat_action_probability=cfg.repeat_action_probability,
+                        full_action_space=cfg.full_action_space,
+                        render_mode = render_mode)
+    #env._freeze_rand_vec = False
+    #env._set_task_called = True
+    #env.seed(cfg.seed) ADDED TO RESET
+    return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
 
 class eval_mode(object):
     def __init__(self, *models):
@@ -103,7 +116,6 @@ class eval_mode(object):
         for model, state in zip(self.models, self.prev_states):
             model.train(state)
         return False
-
 
 class train_mode(object):
     def __init__(self, *models):
