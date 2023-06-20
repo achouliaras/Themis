@@ -110,7 +110,6 @@ class RewardModel:
         self.buffer_label = np.empty((self.capacity, 1), dtype=np.float32)
         self.buffer_index = 0
         self.buffer_full = False
-        self.buffer_traj_lens = []
                 
         self.construct_ensemble()
         self.inputs = []
@@ -341,12 +340,15 @@ class RewardModel:
         sa_t_1 = [train_inputs[i] for i in batch_index_1] # mb_size x (Time x dim of s&a)
         r_t_1 = [train_targets[i] for i in batch_index_1] # mb_size x (Time x 1)
 
-        # Generate time index 
-        #time_index = np.array([list(range(i*len_traj, i*len_traj+size_segment)) for i in range(mb_size)])
-        time_index = np.array([list(range(size_segment)) for i in range(mb_size)])
-        #print('PRINT: ', time_index)
+        sa_t_2_padded = np.zeros((mb_size, self.size_segment, self.ds+self.da))
+        r_t_2_padded = np.zeros((mb_size, self.size_segment, 1))
+        sa_t_1_padded = np.zeros((mb_size, self.size_segment, self.ds+self.da))
+        r_t_1_padded = np.zeros((mb_size, self.size_segment, 1))
 
+        # Generate time index 
+        time_index = np.array([list(range(size_segment)) for i in range(mb_size)])
         time_index_2, time_index_1 = np.zeros((2, mb_size, size_segment),dtype=int)
+
         for i in range(mb_size):
             duration2 =len(sa_t_2[i])
             duration1 =len(sa_t_1[i])
@@ -357,31 +359,52 @@ class RewardModel:
             time_index_1[i] = time_index[i] + shift1
             
             sa_t_2[i] = np.take(sa_t_2[i], time_index_2[i], axis=0) # Batch[i] x (size_seg x dim of s&a)
-            r_t_2[i] = np.take(r_t_2[i], time_index_2[i], axis=0) # Batch[i] x (size_seg x 1)
+            r_t_2[i] = np.take(r_t_2[i], time_index_2[i], axis=0)   # Batch[i] x (size_seg x 1)
             sa_t_1[i] = np.take(sa_t_1[i], time_index_1[i], axis=0) # Batch[i] x (size_seg x dim of s&a)
-            r_t_1[i] = np.take(r_t_1[i], time_index_1[i], axis=0) # Batch[i] x (size_seg x 1)
-        
-        print(np.array(sa_t_1).shape)
+            r_t_1[i] = np.take(r_t_1[i], time_index_1[i], axis=0)   # Batch[i] x (size_seg x 1)
 
-        return np.array(sa_t_1), np.array(sa_t_2), np.array(r_t_1), np.array(r_t_2), size_segment
+            mean_state2 = np.mean(sa_t_2[i][:size_segment, :self.ds])
+            mean_reward2 = np.mean(r_t_2[i][:size_segment])
+            mean_state1 = np.mean(sa_t_1[i][:size_segment, :self.ds])
+            mean_reward1 = np.mean(r_t_1[i][:size_segment])
 
-    def put_queries(self, sa_t_1, sa_t_2, traj_len, labels):
-        total_sample = sa_t_1.shape[0]
+            for j in range(size_segment, self.size_segment):
+                sa_t_2_padded[i][j,:self.ds] = mean_state2
+                r_t_2_padded[i][j] = mean_reward2
+                sa_t_1_padded[i][j,:self.ds] = mean_state1
+                r_t_1_padded[i][j] = mean_reward1
+
+                # We pad the tragectories wth mean state values and random actions to unafect the trajectory value
+                random_actions2 = np.random.choice(sa_t_2_padded[i][j, :self.ds], self.da, replace=True)
+                random_actions1 = np.random.choice(sa_t_1_padded[i][j, :self.ds], self.da, replace=True)
+                
+                np.copyto( sa_t_2_padded[i][j,self.ds:] , random_actions2)
+                np.copyto( sa_t_1_padded[i][j,self.ds:] , random_actions1)
+                
+        np.copyto( sa_t_2_padded[:, :size_segment] , np.array(sa_t_2))
+        np.copyto( r_t_2_padded[:, :size_segment] , np.array(r_t_2))
+        np.copyto( sa_t_1_padded[:, :size_segment] , np.array(sa_t_1))
+        np.copyto( r_t_1_padded[:, :size_segment] , np.array(r_t_1))
+
+        return sa_t_1_padded, sa_t_2_padded, r_t_1_padded, r_t_2_padded
+
+    def put_queries(self, sa_t_1, sa_t_2, labels):
+        total_sample = sa_t_1.shape[0]          # Fix changes based on new padded states
         next_index = self.buffer_index + total_sample
+
         if next_index >= self.capacity:
             self.buffer_full = True
             maximum_index = self.capacity - self.buffer_index
             np.copyto(self.buffer_seg1[self.buffer_index:self.capacity], sa_t_1[:maximum_index])
             np.copyto(self.buffer_seg2[self.buffer_index:self.capacity], sa_t_2[:maximum_index])
             np.copyto(self.buffer_label[self.buffer_index:self.capacity], labels[:maximum_index])
-            self.buffer_traj_lens.extend([traj_len for i in range(maximum_index)])
 
             remain = total_sample - (maximum_index)
+
             if remain > 0:
                 np.copyto(self.buffer_seg1[0:remain], sa_t_1[maximum_index:])
                 np.copyto(self.buffer_seg2[0:remain], sa_t_2[maximum_index:])
                 np.copyto(self.buffer_label[0:remain], labels[maximum_index:])
-                self.buffer_traj_lens.extend([traj_len for i in range(remain)])
 
             self.buffer_index = remain
         else:
@@ -389,7 +412,6 @@ class RewardModel:
             np.copyto(self.buffer_seg2[self.buffer_index:next_index], sa_t_2)
             np.copyto(self.buffer_label[self.buffer_index:next_index], labels)
             self.buffer_index = next_index
-            self.buffer_traj_lens.extend([traj_len for i in range(total_sample)])
             
     def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
         sum_r_t_1 = np.sum(r_t_1, axis=0)
@@ -568,13 +590,13 @@ class RewardModel:
     
     def uniform_sampling(self, first_flag=0):
         # get queries
-        sa_t_1, sa_t_2, r_t_1, r_t_2 , traj_len=  self.get_queries(mb_size=self.mb_size, first_flag=first_flag)
+        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(mb_size=self.mb_size, first_flag=first_flag)
             
         # get labels
         sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(sa_t_1, sa_t_2, r_t_1, r_t_2)
         
         if len(labels) > 0:
-            self.put_queries(sa_t_1, sa_t_2, traj_len, labels)
+            self.put_queries(sa_t_1, sa_t_2, labels)
         
         return len(labels)
     
