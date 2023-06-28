@@ -7,6 +7,7 @@ import copy
 import math
 import os
 import sys
+from pathlib import Path
 import time
 import pickle as pkl
 import tqdm
@@ -21,10 +22,12 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 class Workspace(object):
-    def __init__(self, cfg):
-        self.work_dir = os.getcwd()
-        print(f'workspace: {self.work_dir}')
+    def __init__(self, cfg, work_dir):
+        self.work_dir = work_dir
+        print(f'Workspace: {self.work_dir}')
 
+        snapshot_dir = cfg.snapshot_dir
+        snapshot = snapshot_dir / f'snapshot_{(cfg.num_seed_steps + cfg.num_unsup_steps)*cfg.action_repeat}.pt'
         self.cfg = cfg
         self.logger = Logger(
             self.work_dir,
@@ -37,17 +40,25 @@ class Workspace(object):
         self.log_success = False
         
         # make envs
-        if 'Control/' in cfg.env:
+        if 'Control' in cfg.domain:
             self.env, self.eval_env = utils.make_control_env(cfg, cfg.render_mode)
             self.log_success = True
-        elif 'ALE/' in cfg.env:
+        elif 'ALE' in cfg.domain:
             self.env, self.eval_env = utils.make_atari_env(cfg, cfg.render_mode)
             self.log_success = True
-        elif 'Box2D/' in cfg.env:
+        elif 'Box2D' in cfg.domain:
             self.env, self.eval_env = utils.make_box2d_env(cfg, cfg.render_mode)
+            self.log_success = True
+        elif 'MiniGrid' in cfg.domain:
+            self.env, self.eval_env = utils.make_minigrid_env(cfg, cfg.render_mode)
+            self.log_success = True
         else:
             raise NotImplementedError
         
+        payload = torch.load(snapshot)
+        keys_to_load = ['replay_buffer', 'step', 'episode']
+        self.replay_buffer, self.step, self.episode = [payload[k] for k in keys_to_load]
+
         # Setup Agent
         cfg.agent.obs_dim = self.env.observation_space.shape[0]
         cfg.agent.action_dim = self.env.action_space.shape[0]
@@ -57,17 +68,12 @@ class Workspace(object):
         ]
         
         self.agent = hydra.utils.instantiate(cfg.agent, _recursive_=False)
-        
-        self.replay_buffer = ReplayBuffer(
-            self.env.observation_space.shape,
-            self.env.action_space.shape,
-            int(cfg.replay_buffer_capacity), self.device)
+        self.agent.load(snapshot_dir, self.global_frame)
         
         # for logging
+        self.start_step=self.step
         self.total_feedback = 0
         self.labeled_feedback = 0
-        self.step = 0
-        self.episode=0
         self.interactions=0
         
         # instantiating the reward model
@@ -87,7 +93,22 @@ class Workspace(object):
             teacher_eps_skip=cfg.teacher_eps_skip, 
             teacher_eps_equal=cfg.teacher_eps_equal)
         
+        self.reward_model.load(snapshot_dir, self.global_frame)
+        
         print('INIT COMPLETE')
+        print('Models Restored')
+    
+    @property
+    def global_step(self):
+        return self.step
+
+    @property
+    def global_episode(self):
+        return self.episode
+
+    @property
+    def global_frame(self):
+        return self.step * self.cfg.action_repeat
         
     def evaluate(self):
         average_episode_reward = 0
@@ -198,7 +219,7 @@ class Workspace(object):
                         self.step, save=(self.step > self.cfg.num_seed_steps))
 
                 # evaluate agent periodically
-                if self.step > 0 and self.episode % self.cfg.eval_frequency == 0:
+                if self.step > self.start_step and self.episode % self.cfg.eval_frequency == 0:
                     self.logger.log('eval/episode', self.episode, self.step)
                     self.evaluate()
                 
@@ -299,10 +320,6 @@ class Workspace(object):
                 # reset interact_count
                 interact_count = 0
   
-            # unsupervised exploration
-            elif self.step > self.cfg.num_seed_steps:
-                self.agent.update_state_ent(self.replay_buffer, self.logger, self.step, gradient_update=1, K=self.cfg.topK)
-                
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
             reward_hat = self.reward_model.r_hat(np.concatenate([obs, action], axis=-1))
@@ -314,7 +331,7 @@ class Workspace(object):
             
             if self.log_success:
                 episode_success = max(episode_success, terminated)
-                
+            
             # adding data to the reward training data
             self.reward_model.add_data(obs, action, reward, terminated, truncated)
             self.replay_buffer.add(obs, action, reward_hat, next_obs, terminated, truncated)
@@ -323,14 +340,39 @@ class Workspace(object):
             episode_step += 1
             self.step += 1
             interact_count += 1
-            
-        self.agent.save(self.work_dir, self.step)
-        self.reward_model.save(self.work_dir, self.step)
+
+    def save_snapshot(self):
+        snapshot_dir = self.cfg.snapshot_dir
+        snapshot = snapshot_dir / f'snapshot_{self.global_frame}.pt'
+        snapshot_dir.mkdir(exist_ok=True, parents=True)
+        self.agent.save(snapshot_dir, self.global_frame)
+        self.reward_model.save(snapshot_dir, self.global_frame)
+        keys_to_save = ['replay_buffer', 'step', 'episode']
+        payload = {k: self.__dict__[k] for k in keys_to_save}
+        torch.save(payload, snapshot)
         
 @hydra.main(version_base=None, config_path="config", config_name='train_PEBBLE')
 def main(cfg : DictConfig):
-    workspace = Workspace(cfg)
+    work_dir = Path.cwd()
+    cfg.snapshot_dir = work_dir / cfg.snapshot_dir
+    snapshot = cfg.snapshot_dir / f'snapshot_{cfg.num_seed_steps + cfg.num_unsup_steps}.pt'
+    if not snapshot.exists():
+        print(f"Snapshot doesn't exist at {cfg.snapshot_dir}")
+        print('Execute the pretraining phase first')
+        exit()
+
+    workspace = Workspace(cfg, work_dir)
+    print("ALL GOOD") #Time to check if models are correct. If run works and then work at generating gifs
+    
     workspace.run()
+    if snapshot.exists():
+        print(f'Overwriting: {snapshot}')
+    else:
+        print(f'Creating: {snapshot}')
+    workspace.save_snapshot()
+
+
+    
 
 if __name__ == '__main__':
     main()

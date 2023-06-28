@@ -5,6 +5,7 @@ import os
 import csv
 import shutil
 import torch
+import datetime
 import numpy as np
 from termcolor import colored
 
@@ -13,11 +14,11 @@ COMMON_TRAIN_FORMAT = [
     ('step', 'Step', 'int'),
     ('episode_reward', 'R', 'float'),
     ('true_episode_reward', 'TR', 'float'), 
-    ('total_feedback', 'TF', 'int'),
-    ('labeled_feedback', 'LR', 'int'),
-    ('noisy_feedback', 'NR', 'int'),
+    #('total_feedback', 'TF', 'int'),
+    #('labeled_feedback', 'LR', 'int'),
+    #('noisy_feedback', 'NR', 'int'),
     ('duration', 'D', 'time'),
-    ('total_duration', 'TD', 'time'),
+    ('total_duration', 'TD', 'fulltime'),
 ]
 
 COMMON_EVAL_FORMAT = [
@@ -103,12 +104,14 @@ class MetersGroup(object):
             return f'{key}: {value:.04f}'
         elif ty == 'time':
             return f'{key}: {value:04.1f} s'
+        elif ty == 'fulltime':
+            return f'{key}: {str(datetime.timedelta(seconds=value)).split(".")[0]} '
         else:
             raise f'invalid format type: {ty}'
 
     def _dump_to_console(self, data, prefix):
         prefix = colored(prefix, 'yellow' if prefix == 'train' else 'green')
-        pieces = [f'| {prefix: <14}']
+        pieces = [f' |{prefix: <14}']
         for key, disp_key, ty in self._formating:
             value = data.get(key, 0)
             pieces.append(self._format(disp_key, value, ty))

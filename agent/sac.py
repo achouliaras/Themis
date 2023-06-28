@@ -296,8 +296,7 @@ class SACAgent(Agent):
             
     def update_state_ent(self, replay_buffer, logger, step, gradient_update=1, K=5):
         for index in range(gradient_update):
-            obs, full_obs, action, reward, next_obs, not_done, not_done_no_max = replay_buffer.sample_state_ent(
-                self.batch_size)
+            obs, full_obs, action, reward, next_obs, not_done, not_done_no_max = replay_buffer.sample_state_ent(self.batch_size)
 
             print_flag = False
             if index == gradient_update -1:

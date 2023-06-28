@@ -7,6 +7,7 @@ import copy
 import math
 import os
 import sys
+from pathlib import Path
 import time
 import pickle as pkl
 import tqdm
@@ -20,10 +21,11 @@ import utils
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
+
 class Workspace(object):
-    def __init__(self, cfg):
-        self.work_dir = os.getcwd()
-        print(f'workspace: {self.work_dir}')
+    def __init__(self, cfg, work_dir):
+        self.work_dir = work_dir
+        print(f'Workspace: {self.work_dir}')
 
         self.cfg = cfg
         self.logger = Logger(
@@ -37,14 +39,18 @@ class Workspace(object):
         self.log_success = False
         
         # make envs
-        if 'Control/' in cfg.env:
+        if 'Control' in cfg.domain:
             self.env, self.eval_env = utils.make_control_env(cfg, cfg.render_mode)
             self.log_success = True
-        elif 'ALE/' in cfg.env:
+        elif 'ALE' in cfg.domain:
             self.env, self.eval_env = utils.make_atari_env(cfg, cfg.render_mode)
             self.log_success = True
-        elif 'Box2D/' in cfg.env:
+        elif 'Box2D' in cfg.domain:
             self.env, self.eval_env = utils.make_box2d_env(cfg, cfg.render_mode)
+            self.log_success = True
+        elif 'MiniGrid' in cfg.domain:
+            self.env, self.eval_env = utils.make_minigrid_env(cfg, cfg.render_mode)
+            self.log_success = True
         else:
             raise NotImplementedError
         
@@ -89,6 +95,18 @@ class Workspace(object):
         
         print('INIT COMPLETE')
         
+    @property
+    def global_step(self):
+        return self.step
+
+    @property
+    def global_episode(self):
+        return self.episode
+
+    @property
+    def global_frame(self):
+        return self.step * self.cfg.action_repeat
+
     def evaluate(self):
         average_episode_reward = 0
         average_true_episode_reward = 0
@@ -132,48 +150,6 @@ class Workspace(object):
             self.logger.log('train/true_episode_success', success_rate, self.step)
         self.logger.dump(self.step)
     
-    def learn_reward(self, first_flag=0):    
-        # get feedbacks
-        labeled_queries, noisy_queries = 0, 0
-        if first_flag == 1:
-            # if it is first time to get feedback, need to use random sampling
-            labeled_queries = self.reward_model.uniform_sampling(first_flag=1)
-        else:
-            if self.cfg.feed_type == 0:
-                labeled_queries = self.reward_model.uniform_sampling()
-            elif self.cfg.feed_type == 1:
-                labeled_queries = self.reward_model.disagreement_sampling()
-            elif self.cfg.feed_type == 2:
-                labeled_queries = self.reward_model.entropy_sampling()
-            elif self.cfg.feed_type == 3:
-                labeled_queries = self.reward_model.kcenter_sampling()
-            elif self.cfg.feed_type == 4:
-                labeled_queries = self.reward_model.kcenter_disagree_sampling()
-            elif self.cfg.feed_type == 5:
-                labeled_queries = self.reward_model.kcenter_entropy_sampling()
-            else:
-                raise NotImplementedError
-        
-        self.total_feedback += self.reward_model.mb_size
-        self.labeled_feedback += labeled_queries
-        self.interactions+=1
-        print(f'Feedback No {self.interactions}: {self.total_feedback}/{self.cfg.max_feedback}')
-
-        train_acc = 0
-        if self.labeled_feedback > 0:
-            # update reward
-            for epoch in range(self.cfg.reward_update):
-                if self.cfg.label_margin > 0 or self.cfg.teacher_eps_equal > 0:
-                    train_acc = self.reward_model.train_soft_reward()
-                else:
-                    train_acc = self.reward_model.train_reward()
-                total_acc = np.mean(train_acc)
-                
-                if total_acc > 0.97:
-                    break
-                    
-        print("Reward function is updated!! ACC: " + str(total_acc))
-
     def run(self):
         self.episode, episode_reward, terminated, truncated = 0, 0, True, False
         if self.log_success:
@@ -186,7 +162,7 @@ class Workspace(object):
         start_time = time.time()
 
         interact_count = 0
-        while self.step < self.cfg.num_train_steps:
+        while self.step != (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
             if terminated or truncated:
                 if self.step > 0:
                     episode_time = time.time() - start_time
@@ -196,11 +172,6 @@ class Workspace(object):
                     start_time = time.time()
                     self.logger.dump(
                         self.step, save=(self.step > self.cfg.num_seed_steps))
-
-                # evaluate agent periodically
-                if self.step > 0 and self.episode % self.cfg.eval_frequency == 0:
-                    self.logger.log('eval/episode', self.episode, self.step)
-                    self.evaluate()
                 
                 self.logger.log('train/episode_reward', episode_reward, self.step)
                 self.logger.log('train/true_episode_reward', true_episode_reward, self.step)
@@ -232,75 +203,8 @@ class Workspace(object):
                 with utils.eval_mode(self.agent):
                     action = self.agent.act(obs, sample=True)
 
-            # run training update (until the end)
-            if self.step > (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
-                # update reward function
-                if self.total_feedback < self.cfg.max_feedback:
-                    if interact_count == self.cfg.num_interact:
-                        # update schedule
-                        if self.cfg.reward_schedule == 1:
-                            frac = (self.cfg.num_train_steps-self.step) / self.cfg.num_train_steps
-                            if frac == 0:
-                                frac = 0.01
-                        elif self.cfg.reward_schedule == 2:
-                            frac = self.cfg.num_train_steps / (self.cfg.num_train_steps-self.step +1)
-                        else:
-                            frac = 1
-                        self.reward_model.change_batch(frac)
-                        
-                        # update margin --> not necessary / will be updated soon
-                        new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
-                        self.reward_model.set_teacher_thres_skip(new_margin * self.cfg.teacher_eps_skip)
-                        self.reward_model.set_teacher_thres_equal(new_margin * self.cfg.teacher_eps_equal)
-                        
-                        # corner case: new total feed > max feed
-                        if self.reward_model.mb_size + self.total_feedback > self.cfg.max_feedback:
-                            self.reward_model.set_batch(self.cfg.max_feedback - self.total_feedback)
-                            
-                        self.learn_reward()
-                        self.replay_buffer.relabel_with_predictor(self.reward_model)
-                        interact_count = 0
-                        
-                self.agent.update(self.replay_buffer, self.logger, self.step, 1)
-
-            # run training update (at the end of the unsupervised phase)
-            elif self.step == (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
-                # update schedule
-                if self.cfg.reward_schedule == 1:
-                    frac = (self.cfg.num_train_steps-self.step) / self.cfg.num_train_steps
-                    if frac == 0:
-                        frac = 0.01
-                elif self.cfg.reward_schedule == 2:
-                    frac = self.cfg.num_train_steps / (self.cfg.num_train_steps-self.step +1)
-                else:
-                    frac = 1
-                self.reward_model.change_batch(frac)
-                
-                # update margin --> not necessary / will be updated soon
-                new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
-                self.reward_model.set_teacher_thres_skip(new_margin)
-                self.reward_model.set_teacher_thres_equal(new_margin)
-                
-                # first learn reward
-                self.learn_reward(first_flag=1)
-                
-                # relabel buffer
-                self.replay_buffer.relabel_with_predictor(self.reward_model)
-                
-                # reset Q due to unsuperivsed exploration
-                self.agent.reset_critic()
-                
-                # update agent
-                self.agent.update_after_reset(
-                    self.replay_buffer, self.logger, self.step, 
-                    gradient_update=self.cfg.reset_update, 
-                    policy_update=True)
-                
-                # reset interact_count
-                interact_count = 0
-  
             # unsupervised exploration
-            elif self.step > self.cfg.num_seed_steps:
+            if self.step > self.cfg.num_seed_steps:
                 self.agent.update_state_ent(self.replay_buffer, self.logger, self.step, gradient_update=1, K=self.cfg.topK)
                 
             next_obs, reward, terminated, truncated, info = self.env.step(action)
@@ -323,14 +227,38 @@ class Workspace(object):
             episode_step += 1
             self.step += 1
             interact_count += 1
-            
-        self.agent.save(self.work_dir, self.step)
-        self.reward_model.save(self.work_dir, self.step)
+
+        # evaluate agent at the end
+        self.logger.log('eval/episode', self.episode, self.step)
+        self.evaluate()
+
+    def save_snapshot(self):
+        snapshot_dir = self.cfg.snapshot_dir        
+        snapshot = snapshot_dir / f'snapshot_{self.global_frame}.pt'
+        snapshot_dir.mkdir(exist_ok=True, parents=True)
+        self.agent.save(snapshot_dir, self.global_frame)
+        self.reward_model.save(snapshot_dir, self.global_frame)
+        keys_to_save = ['replay_buffer', 'step', 'episode']
+        payload = {k: self.__dict__[k] for k in keys_to_save}
+        torch.save(payload, snapshot)
         
 @hydra.main(version_base=None, config_path="config", config_name='train_PEBBLE')
 def main(cfg : DictConfig):
-    workspace = Workspace(cfg)
+    work_dir = Path.cwd()
+    workspace = Workspace(cfg, work_dir)
+    cfg.snapshot_dir = work_dir / cfg.snapshot_dir
+    snapshot = cfg.snapshot_dir / f'snapshot_{cfg.num_seed_steps + cfg.num_unsup_steps}.pt'
+    if snapshot.exists():
+        print(f'Snapshot seems to already exist at {cfg.snapshot_dir}')
+        print('Do you want to overwrite it?\n')
+        answer = input('[y]/n')
+        if answer in ['n','no','No']: exit()
     workspace.run()
+    if snapshot.exists():
+        print(f'Overwriting: {snapshot}')
+    else:
+        print(f'Creating: {snapshot}')
+    workspace.save_snapshot()
 
 if __name__ == '__main__':
     main()

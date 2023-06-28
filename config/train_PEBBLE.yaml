@@ -8,7 +8,7 @@ experiment: PEBBLE
 # reward learning
 segment: 50
 activation: tanh
-num_seed_steps: 2000 #1000
+num_seed_steps: 1000 #1000
 num_unsup_steps: 5000 #5000
 num_interact: 5000
 reward_lr: 0.0003
@@ -34,7 +34,7 @@ num_train_steps: 1e6
 replay_buffer_capacity: ${num_train_steps}
 
 # evaluation config
-eval_frequency: 500 #10000
+eval_frequency: 5 #10000
 num_eval_episodes: 20
 device: cpu
 
@@ -49,12 +49,21 @@ save_video: false
 seed: 1
 
 # Environment
+domain: Control
 env: Ant-v4
 render_mode: None
 gradient_update: 1
 
-# hydra configuration
-#hydra:
-    #name: ${env}
-    #run:
-        #dir: ./exp/${env}/H${diag_gaussian_actor.params.hidden_dim}_L${diag_gaussian_actor.params.hidden_depth}_lr${agent.params.actor_lr}/teacher_b${teacher_beta}_g${teacher_gamma}_m${teacher_eps_mistake}_s${teacher_eps_skip}_e${teacher_eps_equal}/label_smooth_${label_margin}/schedule_${reward_schedule}/${experiment}_init${num_seed_steps}_unsup${num_unsup_steps}_inter${num_interact}_maxfeed${max_feedback}_seg${segment}_act${activation}_Rlr${reward_lr}_Rbatch${reward_batch}_Rupdate${reward_update}_en${ensemble_size}_sample${feed_type}_large_batch${large_batch}_seed${seed}
+#Task Settings
+obs_type: states # [states, pixels]
+frame_stack: 4 # only works if obs_type=pixels
+frameskip:
+action_repeat: 1 # set to 2 for pixels
+mode :
+difficulty :
+repeat_action_probability:
+full_action_space:
+
+# Snapshot
+snapshots: [100000, 500000, 1000000, 2000000]
+snapshot_dir: models/${obs_type}/${env}/sac/

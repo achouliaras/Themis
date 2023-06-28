@@ -14,74 +14,41 @@ from skimage.util.shape import view_as_windows
 from torch import nn
 from torch import distributions as pyd
     
-def make_env(cfg):
-    """Helper function to create dm_control environment"""
-    if cfg.env == 'ball_in_cup_catch':
-        domain_name = 'ball_in_cup'
-        task_name = 'catch'
-    else:
-        domain_name = cfg.env.split('_')[0]
-        task_name = '_'.join(cfg.env.split('_')[1:])
-
-    env = gym.make(domain_name=domain_name,
-                       task_name=task_name,
-                       seed=cfg.seed,
-                       visualize_reward=False)
-    env.seed(cfg.seed)
-    assert env.action_space.low.min() >= -1
-    assert env.action_space.high.max() <= 1
-
-    return env
-
-def ppo_make_env(env_id, seed):
-    """Helper function to create dm_control environment"""
-    if env_id == 'ball_in_cup_catch':
-        domain_name = 'ball_in_cup'
-        task_name = 'catch'
-    else:
-        domain_name = env_id.split('_')[0]
-        task_name = '_'.join(env_id.split('_')[1:])
-
-    env = gym.make(domain_name=domain_name,
-                       task_name=task_name,
-                       seed=seed,
-                       visualize_reward=True)
-    env.seed(seed)
-    assert env.action_space.low.min() >= -1
-    assert env.action_space.high.max() <= 1
-
-    return env
-
-def tie_weights(src, trg):
-    assert type(src) == type(trg)
-    trg.weight = src.weight
-    trg.bias = src.bias
-    
-def make_control_env(cfg, render_mode=None):
-    """Helper function to create mujoco environment"""
-    id = cfg.env.split('/')[1:][0]
-    env = gym.make(id=id, render_mode=None)
-    eval_env =  gym.make(id=id, render_mode=render_mode)       
-    #env._freeze_rand_vec = False
-    #env._set_task_called = True
-    #env.seed(cfg.seed) #ADDED TO RESET
-    
+def make_box2d_env(cfg, render_mode=None):
+    #Helper function to create Box2D environment
+    id = cfg.env
+    if 'BipedalWalker' in id:
+        env = gym.make(id=id, render_mode=None)
+        eval_env =  gym.make(id=id, render_mode=render_mode) 
+    elif 'Moonlander' in id:   
+        env = gym.make(id=id, continuous=True, render_mode=None)
+        eval_env =  gym.make(id=id, continuous=True, render_mode=render_mode)
+    elif 'CarRacing' in id:
+        env = gym.make(id=id, continuous=True, render_mode=None)
+        eval_env =  gym.make(id=id, continuous=True, render_mode=render_mode)
+        
     return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
 
-def ppo_make_control_env(env_name, render_mode=None):
-    # NORMAL ARGS NO HYDRA    
-    env = gym.make(id=env_name, 
-                   render_mode=render_mode)
-    
-    #env._freeze_rand_vec = False
-    #env._set_task_called = True
-    #env.seed(seed) ADDED TO RESET
-    
-    return TimeLimit(env, env.max_episode_steps)
+def make_control_env(cfg, render_mode=None):
+    #Helper function to create MUJOCO environment
+    id = cfg.env
+    env = gym.make(id=id, render_mode=None)
+    eval_env =  gym.make(id=id, render_mode=render_mode)       
+        
+    return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
+
+def make_minigrid_env(cfg, render_mode=None):
+    #Helper function to create MiniGrid environment
+    id = cfg.env
+    env = gym.make(id=id, render_mode=None)
+    eval_env =  gym.make(id=id, render_mode=render_mode)       
+        
+    return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
 
 def make_atari_env(cfg, render_mode=None):
-    """Helper function to create atari environment"""
-    env = gym.make(id=cfg.env, 
+    #Helper function to create Atari environment
+    id=cfg.domain+'/'+cfg.env
+    env = gym.make(id=id, 
                    mode=cfg.mode, 
                    difficulty=cfg.difficulty, 
                    obs_type=cfg.obs_type, 
@@ -89,7 +56,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode=None)
-    eval_env =  gym.make(id=cfg.env, 
+    eval_env =  gym.make(id=id, 
                         mode=cfg.mode, 
                         difficulty=cfg.difficulty, 
                         obs_type=cfg.obs_type, 
@@ -97,9 +64,7 @@ def make_atari_env(cfg, render_mode=None):
                         repeat_action_probability=cfg.repeat_action_probability,
                         full_action_space=cfg.full_action_space,
                         render_mode = render_mode)
-    #env._freeze_rand_vec = False
-    #env._set_task_called = True
-    #env.seed(cfg.seed) ADDED TO RESET
+    
     return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
 
 class eval_mode(object):
@@ -240,7 +205,6 @@ class TorchRunningMeanStd:
     @property
     def std(self):
         return torch.sqrt(self.var)
-
 
 def update_mean_var_count_from_moments(
     mean, var, count, batch_mean, batch_var, batch_count

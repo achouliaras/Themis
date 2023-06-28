@@ -266,16 +266,30 @@ class RewardModel:
         return np.mean(r_hats, axis=0)
     
     def save(self, model_dir, step):
-        for member in range(self.de):
-            torch.save(
-                self.ensemble[member].state_dict(), '%s/reward_model_%s_%s.pt' % (model_dir, step, member)
-            )
+        
+        payload = { f'member_{i}' : member.state_dict() for i, member in enumerate(self.ensemble)}
+        keys_to_save =['inputs', 'targets', 'paramlst']
+        payload = payload | {k: self.__dict__[k] for k in keys_to_save}
+        torch.save(payload, '%s/reward_model_%s.pt' % (model_dir, step))
+
+        # for member in range(self.de):
+        #     torch.save(
+        #         self.ensemble[member].state_dict(), '%s/reward_model_%s_%s.pt' % (model_dir, step, member)
+        #     )
             
     def load(self, model_dir, step):
-        for member in range(self.de):
-            self.ensemble[member].load_state_dict(
-                torch.load('%s/reward_model_%s_%s.pt' % (model_dir, step, member))
-            )
+        payload = torch.load('%s/reward_model_%s.pt' % (model_dir, step))
+
+        keys_to_load =['inputs', 'targets', 'paramlst']
+        self.inputs, self.targets, self.paramlst =  [payload[k] for k in keys_to_load]
+        
+        for i in range(self.de): 
+            self.ensemble[i].load_state_dict(payload[f'member_{i}'])
+
+        # for member in range(self.de):
+        #     self.ensemble[member].load_state_dict(
+        #         torch.load('%s/reward_model_%s_%s.pt' % (model_dir, step, member))
+        #     )
     
     def get_train_acc(self):
         ensemble_acc = np.array([0 for _ in range(self.de)])
@@ -326,7 +340,7 @@ class RewardModel:
         if len_traj < size_segment:         # If you ask for segment smaller than the min traj len
             size_segment = len_traj-1
 
-        img_t_1, img_t_2 = None, None
+        #img_t_1, img_t_2 = None, None
 
         # get train traj
         train_inputs = self.inputs[:max_len]    #turn inputs into arrays (minus the last one probably)
@@ -349,6 +363,7 @@ class RewardModel:
         time_index = np.array([list(range(size_segment)) for i in range(mb_size)])
         time_index_2, time_index_1 = np.zeros((2, mb_size, size_segment),dtype=int)
 
+        print('Segment is: ', size_segment)
         for i in range(mb_size):
             duration2 =len(sa_t_2[i])
             duration1 =len(sa_t_1[i])
@@ -414,9 +429,9 @@ class RewardModel:
             self.buffer_index = next_index
             
     def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
-        sum_r_t_1 = np.sum(r_t_1, axis=0)
-        sum_r_t_2 = np.sum(r_t_2, axis=0)
-        
+        sum_r_t_1 = np.sum(r_t_1, axis=1)
+        sum_r_t_2 = np.sum(r_t_2, axis=1)
+
         # HUMAN Feedback???
 
         # skip the query
@@ -443,8 +458,8 @@ class RewardModel:
         for index in range(seg_size-1):
             temp_r_t_1[:index+1] *= self.teacher_gamma
             temp_r_t_2[:index+1] *= self.teacher_gamma
-        sum_r_t_1 = np.sum(temp_r_t_1, axis=0)
-        sum_r_t_2 = np.sum(temp_r_t_2, axis=0)
+        sum_r_t_1 = np.sum(temp_r_t_1, axis=1)
+        sum_r_t_2 = np.sum(temp_r_t_2, axis=1)
             
         rational_labels = 1*(sum_r_t_1 < sum_r_t_2)
         if self.teacher_beta > 0: # Bradley-Terry rational model
@@ -461,7 +476,7 @@ class RewardModel:
         rand_num = np.random.rand(len_labels)
         noise_index = rand_num <= self.teacher_eps_mistake
         labels[noise_index] = 1 - labels[noise_index]
- 
+
         # equally preferable
         labels[margin_index] = -1 
         
