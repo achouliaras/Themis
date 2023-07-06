@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import imageio
 from moviepy.editor import VideoFileClip, clips_array
 
@@ -41,26 +42,29 @@ def generate_merged_clip(frames1, frames2, clipname='TestMergedClips.mp4'):
     i=[os.remove(f'TESTclip2_{i}.mp4') for i, clip1 in enumerate(frames2)]
 
 def generate_paired_clips(frames1, frames2, clipname='TestPairClip', format='mp4'):
+    p = Path('Clips')
+    p.mkdir(exist_ok=True)
+
     clips1=[]
     for i, clip1 in enumerate(frames1):
         filename = f'TESTclip1_{i}.mp4'
-        with open(filename, 'wb') as file1:
-            imageio.mimsave(filename, clip1, fps=20)
-        clips1.append(VideoFileClip(f'TESTclip1_{i}.mp4').margin(10))
+        with open(p / filename, 'wb') as file1:
+            imageio.mimsave(p / filename, clip1, fps=20)
+        clips1.append(VideoFileClip(str(p / filename)).margin(10))
     
     clips2=[]
     for i, clip2 in enumerate(frames2):
         filename = f'TESTclip2_{i}.mp4'
-        with open(filename, 'wb') as file2:
-            imageio.mimsave(filename, clip2, fps=20)
-        clips2.append(VideoFileClip(f'TESTclip2_{i}.mp4').margin(10))
+        with open(p / filename, 'wb') as file2:
+            imageio.mimsave(p / filename, clip2, fps=20)
+        clips2.append(VideoFileClip(str(p / filename)).margin(10))
 
     for i, clips in enumerate(zip(clips1,clips2)):
         multiclip = clips_array([clips])
-        multiclip.write_videofile(clipname+'_' + str(i) +'.' + format)
+        multiclip.write_videofile(str(p)+'/'+clipname + '_' + str(i+1) +'.' + format, threads=4, logger = None)
 
-    i=[os.remove(f'TESTclip1_{i}.mp4') for i, clip1 in enumerate(frames1)]
-    i=[os.remove(f'TESTclip2_{i}.mp4') for i, clip1 in enumerate(frames2)]
+    i=[os.remove(p / f'TESTclip1_{i}.mp4') for i, clip1 in enumerate(frames1)]
+    i=[os.remove(p / f'TESTclip2_{i}.mp4') for i, clip1 in enumerate(frames2)]
 
 def get_batch_input_keyboad(input_size):
     # Get human input from keyboard as a string of the individual choices
@@ -94,11 +98,11 @@ def get_input_keyboad(input_size):
     while len(labels) < input_size:
         choice = input(f'Type Choice for clip No: {len(labels)+1}\n')
         if choice == '1':
-            labels.append([1])
+            labels.append(1)
         elif choice == '2':
-            labels.append([0])
+            labels.append(0)
         elif choice == ' ':
-            labels.append([-1])
+            labels.append(-1)
         else:
             print('Wrong input. Try again') 
     return labels

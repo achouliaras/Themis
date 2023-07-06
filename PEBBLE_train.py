@@ -12,12 +12,12 @@ import time
 import pickle as pkl
 import tqdm
 
-from logger import Logger
+from lib.logger import Logger
 from replay_buffer import ReplayBuffer
-from reward_model import RewardModel
+from lib.reward_model import RewardModel
 from collections import deque
 
-import utils
+import lib.utils as utils
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
@@ -178,7 +178,8 @@ class Workspace(object):
             else:
                 raise NotImplementedError
         
-        self.total_feedback += self.reward_model.mb_size
+        if labeled_queries == self.reward_model.mb_size:
+            self.total_feedback += self.reward_model.mb_size
         self.labeled_feedback += labeled_queries
         self.interactions+=1
         print(f'Feedback No {self.interactions}: {self.total_feedback}/{self.cfg.max_feedback}')
@@ -196,7 +197,8 @@ class Workspace(object):
                 if total_acc > 0.97:
                     break
                     
-        print("Reward function is updated!! ACC: " + str(total_acc))
+            print("Reward function is updated!! ACC: " + str(total_acc))
+        return labeled_queries
 
     def run(self):
         self.episode, episode_reward, terminated, truncated = 0, 0, True, False

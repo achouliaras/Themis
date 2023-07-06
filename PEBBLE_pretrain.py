@@ -12,12 +12,12 @@ import time
 import pickle as pkl
 import tqdm
 
-from logger import Logger
+from lib.logger import Logger
 from replay_buffer import ReplayBuffer
-from reward_model import RewardModel
+from lib.reward_model import RewardModel
 from collections import deque
 
-import utils
+import lib.utils as utils
 import hydra
 from omegaconf import DictConfig, OmegaConf
 

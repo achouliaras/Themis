@@ -429,7 +429,7 @@ class RewardModel:
             # Get human input
             labels =[]
             labels = ui.get_input_keyboad(self.mb_size)
-
+            print(len(labels))
             if len(labels) == 0:
                 return None, None, None, None, []
         else:

@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-import utils
+import lib.utils as utils
 
 class ReplayBuffer(object):
     """Buffer to store environment transitions."""
