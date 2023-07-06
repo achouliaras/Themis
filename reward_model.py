@@ -423,7 +423,8 @@ class RewardModel:
             clips1 = ui.generate_frames(sa_t_1, self.env, self.seed)
             clips2 = ui.generate_frames(sa_t_2, self.env, self.seed)
             
-            ui.generate_merged_clip(clips1, clips2, 'TestMergedClips.mp4')
+            #ui.generate_merged_clip(clips1, clips2, 'TestMergedClips.mp4')
+            ui.generate_paired_clips(clips1, clips2, 'TestPairClip', 'mp4')
 
             # Get human input
             labels =[]

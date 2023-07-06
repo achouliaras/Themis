@@ -40,9 +40,31 @@ def generate_merged_clip(frames1, frames2, clipname='TestMergedClips.mp4'):
     i=[os.remove(f'TESTclip1_{i}.mp4') for i, clip1 in enumerate(frames1)]
     i=[os.remove(f'TESTclip2_{i}.mp4') for i, clip1 in enumerate(frames2)]
 
+def generate_paired_clips(frames1, frames2, clipname='TestPairClip', format='mp4'):
+    clips1=[]
+    for i, clip1 in enumerate(frames1):
+        filename = f'TESTclip1_{i}.mp4'
+        with open(filename, 'wb') as file1:
+            imageio.mimsave(filename, clip1, fps=20)
+        clips1.append(VideoFileClip(f'TESTclip1_{i}.mp4').margin(10))
+    
+    clips2=[]
+    for i, clip2 in enumerate(frames2):
+        filename = f'TESTclip2_{i}.mp4'
+        with open(filename, 'wb') as file2:
+            imageio.mimsave(filename, clip2, fps=20)
+        clips2.append(VideoFileClip(f'TESTclip2_{i}.mp4').margin(10))
+
+    for i, clips in enumerate(zip(clips1,clips2)):
+        multiclip = clips_array([clips])
+        multiclip.write_videofile(clipname+'_' + str(i) +'.' + format)
+
+    i=[os.remove(f'TESTclip1_{i}.mp4') for i, clip1 in enumerate(frames1)]
+    i=[os.remove(f'TESTclip2_{i}.mp4') for i, clip1 in enumerate(frames2)]
+
 def get_batch_input_keyboad(input_size):
     # Get human input from keyboard as a string of the individual choices
-    print("Type 1 for the top video, 2 for the bottom and SPACE if equal\n")
+    print("\nType 1 for the top video, 2 for the bottom and SPACE if equal")
     choice_list = list(input('Type anything else to discard all preferences\n'))
     while len(choice_list)!=input_size:
         print(f'Wrong Input size. Provide {input_size} preferences\n')
@@ -63,7 +85,7 @@ def get_batch_input_keyboad(input_size):
 
 def get_input_keyboad(input_size):
     # Get human input from keyboard for each individual choice
-    print("\nType 1 for the top video, 2 for the bottom and SPACE if equal")
+    print("\nType 1 for the left video, 2 for the right and SPACE if equal")
     print('If you wish to discard all preferences type "skip"\n')
     if input() == 'skip':
         return []
