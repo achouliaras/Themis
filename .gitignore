@@ -20,6 +20,7 @@ git_rewrite_commit_history.sh
 d:/
 eval.csv
 outputs/
+video_kit/
 tb/
 train.csv
 
