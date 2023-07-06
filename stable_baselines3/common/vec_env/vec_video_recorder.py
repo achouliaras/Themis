@@ -3,7 +3,6 @@ from typing import Callable
 
 from gymnasium.wrappers.monitoring import video_recorder
 
-from stable_baselines3.common import logger
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvObs, VecEnvStepReturn, VecEnvWrapper
 from stable_baselines3.common.vec_env.dummy_vec_env import DummyVecEnv
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
@@ -31,7 +30,6 @@ class VecVideoRecorder(VecEnvWrapper):
         video_length: int = 200,
         name_prefix: str = "rl-video",
     ):
-
         VecEnvWrapper.__init__(self, venv)
 
         self.env = venv
@@ -49,6 +47,7 @@ class VecVideoRecorder(VecEnvWrapper):
             metadata = temp_env.metadata
 
         self.env.metadata = metadata
+        assert self.env.render_mode == "rgb_array", f"The render_mode must be 'rgb_array', not {self.env.render_mode}"
 
         self.record_video_trigger = record_video_trigger
         self.video_recorder = None
@@ -93,7 +92,7 @@ class VecVideoRecorder(VecEnvWrapper):
             self.video_recorder.capture_frame()
             self.recorded_frames += 1
             if self.recorded_frames > self.video_length:
-                logger.info("Saving video to ", self.video_recorder.path)
+                print(f"Saving video to {self.video_recorder.path}")
                 self.close_video_recorder()
         elif self._video_enabled():
             self.start_video_recorder()
@@ -111,4 +110,4 @@ class VecVideoRecorder(VecEnvWrapper):
         self.close_video_recorder()
 
     def __del__(self):
-        self.close()
+        self.close_video_recorder()

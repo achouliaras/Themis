@@ -6,6 +6,7 @@ import utils
 
 from torch import nn
 from torch import distributions as pyd
+from torch.distributions.categorical import Categorical
 
 class TanhTransform(pyd.transforms.Transform):
     domain = pyd.constraints.real
@@ -55,7 +56,7 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
 
 
 class DiagGaussianActor(nn.Module):
-    """torch.distributions implementation of an diagonal Gaussian policy."""
+    """torch.distributions implementation of an diagonal Gaussian policy for continuous environments."""
     def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth,
                  log_std_bounds):
         super().__init__()
@@ -85,6 +86,45 @@ class DiagGaussianActor(nn.Module):
     def log(self, logger, step):
         for k, v in self.outputs.items():
             logger.log_histogram(f'train_actor/{k}_hist', v, step)
+
+        for i, m in enumerate(self.trunk):
+            if type(m) == nn.Linear:
+                logger.log_param(f'train_actor/fc{i}', m, step)
+
+class CategoricalActor(nn.Module):
+    """torch.distributions implementation of a categorical policy for discrete environments."""
+    def __init__(self, obs_space, obs_dim, action_dim, policy, hidden_dim, hidden_depth,
+                 log_std_bounds):
+        super().__init__()
+        self.obs_space = obs_space
+        self.policy = policy
+        self.log_std_bounds = log_std_bounds
+
+        print(obs_dim[-1])
+        if policy =='CNN':
+            self.cnn, self.trunk = utils.cnn(obs_space, obs_dim[-1], hidden_dim, 2 * action_dim, hidden_depth)
+        else:
+            self.trunk = utils.mlp(obs_dim, hidden_dim, 2 * action_dim, hidden_depth)
+
+        self.outputs = dict()
+        self.apply(utils.weight_init)
+
+    def forward(self, obs):
+        if self.policy =='CNN':
+            x = self.trunk(self.cnn(obs))
+        else:
+            x = self.trunk(obs)
+    
+        dist = Categorical(logits=F.log_softmax(x, dim=1))
+        return dist
+
+    def log(self, logger, step):
+        for k, v in self.outputs.items():
+            logger.log_histogram(f'train_actor/{k}_hist', v, step)
+
+        for l, n in enumerate(self.cnn):
+            if type(n) == nn.Conv2d:
+                logger.log_param(f'train_actor/conv{l}', n, step)
 
         for i, m in enumerate(self.trunk):
             if type(m) == nn.Linear:

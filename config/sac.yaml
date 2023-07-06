@@ -3,30 +3,33 @@ algorithm:
 
 agent:
   _target_: agent.sac.SACAgent
+  obs_space : Null
   obs_dim: Null # to be specified later
   action_dim: Null # to be specified later
   action_range: Null # to be specified later
   device: ${device}
   critic_cfg: ${double_q_critic}
-  actor_cfg: ${diag_gaussian_actor}
+  actor_cfg: ${diag_gaussian_actor} # ${categorical_actor} for discrete environments
   discount: 0.99
   init_temperature: 0.1
   alpha_lr: 1e-4
   alpha_betas: [0.9, 0.999]
-  actor_lr: 1e-4
+  actor_lr: 0.0005
   actor_betas: [0.9, 0.999]
   actor_update_frequency: 1
-  critic_lr: 1e-4
+  critic_lr: 0.0005
   critic_betas: [0.9, 0.999]
   critic_tau: 0.005
   critic_target_update_frequency: 2
   batch_size: 1024 # 1024 for Walker, 512 for Meta-world
+  policy: 'MLP'
   learnable_temperature: true
     
 double_q_critic:
   _target_: agent.critic.DoubleQCritic
   obs_dim: ${agent.obs_dim}
   action_dim: ${agent.action_dim}
+  policy: ${agent.policy}
   hidden_dim: 1024
   hidden_depth: 2
     
@@ -34,6 +37,16 @@ diag_gaussian_actor:
   _target_: agent.actor.DiagGaussianActor
   obs_dim: ${agent.obs_dim}
   action_dim: ${agent.action_dim}
+  hidden_depth: 2
+  hidden_dim: 1024
+  log_std_bounds: [-5, 2]
+
+categorical_actor:
+  _target_: agent.actor.CategoricalActor
+  obs_space: ${agent.obs_space}
+  obs_dim: ${agent.obs_dim}
+  action_dim: ${agent.action_dim}
+  policy: ${agent.policy}
   hidden_depth: 2
   hidden_dim: 1024
   log_std_bounds: [-5, 2]

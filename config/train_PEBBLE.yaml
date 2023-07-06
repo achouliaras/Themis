@@ -7,7 +7,7 @@ experiment: PEBBLE
 
 # reward learning
 segment: 50
-activation: tanh
+activation: leaky_relu
 num_seed_steps: 1000 #1000
 num_unsup_steps: 5000 #5000
 num_interact: 5000
@@ -21,11 +21,12 @@ ensemble_size: 3
 max_feedback: 1400
 large_batch: 10
 label_margin: 0.0
-teacher_beta: -1
-teacher_gamma: 1
-teacher_eps_mistake: 0
-teacher_eps_skip: 0
-teacher_eps_equal: 0
+human_teacher: False
+teacher_beta: -1    # Rationality Constant 0 leads to random choices and infinite (-1) to perfectly rational
+teacher_gamma: 1    # Discound Factor for myopic behavior paying more attention on recent states
+teacher_eps_mistake: 0  # Probability of mistake
+teacher_eps_skip: 0     # Probability of considering both segments bad
+teacher_eps_equal: 0    # Probability of considering both segments equally good
 
 # scheduling
 reward_schedule: 0
@@ -34,7 +35,7 @@ num_train_steps: 1e6
 replay_buffer_capacity: ${num_train_steps}
 
 # evaluation config
-eval_frequency: 5 #10000
+eval_frequency: 100 #10000
 num_eval_episodes: 20
 device: cpu
 
@@ -52,6 +53,7 @@ seed: 1
 domain: Control
 env: Ant-v4
 render_mode: None
+#max_episode_steps: 100
 gradient_update: 1
 
 #Task Settings

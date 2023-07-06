@@ -15,6 +15,8 @@ from torch import nn
 from torch import distributions as pyd
     
 def make_box2d_env(cfg, render_mode=None):
+    env = eval_env = sim_env = None
+
     #Helper function to create Box2D environment
     id = cfg.env
     if 'BipedalWalker' in id:
@@ -30,22 +32,39 @@ def make_box2d_env(cfg, render_mode=None):
     return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
 
 def make_control_env(cfg, render_mode=None):
+    env = eval_env = sim_env = None
     #Helper function to create MUJOCO environment
     id = cfg.env
-    env = gym.make(id=id, render_mode=None)
-    eval_env =  gym.make(id=id, render_mode=render_mode)       
-        
-    return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
+    env = gym.make(id=id, render_mode=None)   
+    env = TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps)
+
+    eval_env =  gym.make(id=id, render_mode=render_mode)   
+    eval_env = TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
+
+    if cfg.human_teacher:
+        sim_env = gym.make(id=id, render_mode='rgb_array')
+        sim_env = TimeLimit(RewindWrapper(NormalizedBoxEnv(sim_env)), sim_env._max_episode_steps)
+
+    return env, eval_env, sim_env
 
 def make_minigrid_env(cfg, render_mode=None):
+    env = eval_env = sim_env = None
     #Helper function to create MiniGrid environment
-    id = cfg.env
+    id=cfg.domain+'-'+cfg.env
     env = gym.make(id=id, render_mode=None)
-    eval_env =  gym.make(id=id, render_mode=render_mode)       
+    env = TimeLimit(env, env.max_steps)
+
+    eval_env =  gym.make(id=id, render_mode=render_mode)   
+    eval_env = TimeLimit(eval_env, eval_env.max_steps)
+
+    if cfg.human_teacher:
+        sim_env = gym.make(id=id, render_mode='rgb_array')
+        sim_env = TimeLimit(RewindWrapper(sim_env), sim_env.max_steps)    
         
-    return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
+    return env, eval_env, sim_env
 
 def make_atari_env(cfg, render_mode=None):
+    env = eval_env = sim_env = None
     #Helper function to create Atari environment
     id=cfg.domain+'/'+cfg.env
     env = gym.make(id=id, 
@@ -56,6 +75,9 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode=None)
+    print(env.action_space) # Remove normalise probably
+    env = TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps)
+
     eval_env =  gym.make(id=id, 
                         mode=cfg.mode, 
                         difficulty=cfg.difficulty, 
@@ -64,8 +86,20 @@ def make_atari_env(cfg, render_mode=None):
                         repeat_action_probability=cfg.repeat_action_probability,
                         full_action_space=cfg.full_action_space,
                         render_mode = render_mode)
+    eval_env = TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
     
-    return TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps), TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
+    if cfg.human_teacher:
+        sim_env = gym.make(id=id, 
+                   mode=cfg.mode, 
+                   difficulty=cfg.difficulty, 
+                   obs_type=cfg.obs_type, 
+                   frameskip = cfg.frameskip,
+                   repeat_action_probability=cfg.repeat_action_probability,
+                   full_action_space=cfg.full_action_space,
+                   render_mode='rgb_array')
+        sim_env = TimeLimit(RewindWrapper(NormalizedBoxEnv(sim_env)), sim_env._max_episode_steps)
+
+    return env, eval_env, sim_env
 
 class eval_mode(object):
     def __init__(self, *models):
@@ -221,6 +255,26 @@ def update_mean_var_count_from_moments(
 
     return new_mean, new_var, new_count
 
+def cnn(obs_space, n_input_channels, hidden_dim, output_dim, hidden_depth, output_mod=None):
+
+    feature_extractor=nn.Sequential(
+        nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4, padding=0),
+        nn.ReLU(),
+        nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
+        nn.ReLU(),
+        nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
+        nn.ReLU(),
+        nn.Flatten(),
+    )
+    
+    # Compute shape by doing one forward pass
+    with torch.no_grad():
+        n_flatten = feature_extractor(torch.as_tensor(obs_space.sample()[None]).float()).shape[1]
+
+    linear = mlp(n_flatten, hidden_dim, output_dim, hidden_depth, output_mod)
+    
+    return feature_extractor, linear
+
 def mlp(input_dim, hidden_dim, output_dim, hidden_depth, output_mod=None):
     if hidden_depth == 0:
         mods = [nn.Linear(input_dim, output_dim)]
@@ -241,3 +295,10 @@ def to_np(t):
         return np.array([])
     else:
         return t.cpu().detach().numpy()
+
+class RewindWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+    
+    def set_state(self, state):
+        self.env.state = state

@@ -1,2 +1,3 @@
 seed=$RANDOM
-python PEBBLE_train.py  domain=Control env=Humanoid-v4 render_mode=human seed=$seed agent.actor_lr=0.0005 agent.critic_lr=0.0005 gradient_update=1 activation=leaky_relu num_unsup_steps=0 num_train_steps=500000 num_interact=1000 max_feedback=1000 reward_batch=5 reward_update=50 feed_type=$1 teacher_beta=-1 teacher_gamma=1 teacher_eps_mistake=0 teacher_eps_skip=0 teacher_eps_equal=0
+#python PEBBLE_pretrain.py  domain=MiniGrid env=DistShift1-v0 render_mode=human seed=$seed num_unsup_steps=1000 num_train_steps=500000 num_interact=3000 max_feedback=1000 reward_batch=8 reward_update=100 feed_type=$1 human_teacher=False agent.batch_size=256
+python PEBBLE_train.py  domain=Control env=Humanoid-v4 render_mode=human seed=$seed num_unsup_steps=9000 num_train_steps=500000 num_interact=3000 max_feedback=1000 reward_batch=8 reward_update=100 feed_type=$1 human_teacher=True

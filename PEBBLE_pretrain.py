@@ -40,29 +40,38 @@ class Workspace(object):
         
         # make envs
         if 'Control' in cfg.domain:
-            self.env, self.eval_env = utils.make_control_env(cfg, cfg.render_mode)
+            self.env, self.eval_env, self.sim_env = utils.make_control_env(cfg, cfg.render_mode)
             self.log_success = True
+
+            # Setup Agent
+            cfg.agent.obs_dim = self.env.observation_space.shape[0]
+            cfg.agent.action_dim = self.env.action_space.shape[0]
+            cfg.agent.action_range = [
+                float(self.env.action_space.low.min()),
+                float(self.env.action_space.high.max())
+            ]
+
         elif 'ALE' in cfg.domain:
-            self.env, self.eval_env = utils.make_atari_env(cfg, cfg.render_mode)
+            self.env, self.eval_env, self.sim_env = utils.make_atari_env(cfg, cfg.render_mode)
             self.log_success = True
         elif 'Box2D' in cfg.domain:
-            self.env, self.eval_env = utils.make_box2d_env(cfg, cfg.render_mode)
+            self.env, self.eval_env, self.sim_env = utils.make_box2d_env(cfg, cfg.render_mode)
             self.log_success = True
-        elif 'MiniGrid' in cfg.domain:
-            self.env, self.eval_env = utils.make_minigrid_env(cfg, cfg.render_mode)
+        elif 'MiniGrid' in cfg.domain or 'BabyAI' in cfg.domain:
+            self.env, self.eval_env, self.sim_env = utils.make_minigrid_env(cfg, cfg.render_mode)
             self.log_success = True
+
+            # Setup Agent
+            cfg.agent.obs_space = self.env.observation_space       #Hydra doesn't let me pass a dict 
+            cfg.agent.obs_dim = self.env.observation_space['image'].shape
+            cfg.agent.action_dim = int(self.env.action_space.n)
+            cfg.agent.batch_size = 256
+            cfg.agent.policy = 'CNN'
+            cfg.agent.action_range = [0,1]
         else:
             raise NotImplementedError
         
-        # Setup Agent
-        cfg.agent.obs_dim = self.env.observation_space.shape[0]
-        cfg.agent.action_dim = self.env.action_space.shape[0]
-        cfg.agent.action_range = [
-            float(self.env.action_space.low.min()),
-            float(self.env.action_space.high.max())
-        ]
-        
-        self.agent = hydra.utils.instantiate(cfg.agent, _recursive_=False)
+        self.agent = hydra.utils.instantiate(cfg.agent, _recursive_=False, _convert_="all")
         
         self.replay_buffer = ReplayBuffer(
             self.env.observation_space.shape,
@@ -255,9 +264,9 @@ def main(cfg : DictConfig):
         if answer in ['n','no','No']: exit()
     workspace.run()
     if snapshot.exists():
-        print(f'Overwriting: {snapshot}')
+        print(f'Overwriting models at: {cfg.snapshot_dir}')
     else:
-        print(f'Creating: {snapshot}')
+        print(f'Creating models at: {cfg.snapshot_dir}')
     workspace.save_snapshot()
 
 if __name__ == '__main__':

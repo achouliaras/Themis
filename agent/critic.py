@@ -7,8 +7,14 @@ from torch import nn
 
 class DoubleQCritic(nn.Module):
     """Critic network, employes double Q-learning."""
-    def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth):
+    def __init__(self, obs_dim, action_dim, policy, hidden_dim, hidden_depth):
         super().__init__()
+        self.policy = policy
+
+        # If obs is image-like sum dimensions
+        if policy == 'CNN':
+            self.flatten=nn.Flatten()
+            obs_dim = sum(obs_dim)
 
         self.Q1 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
         self.Q2 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
@@ -19,6 +25,8 @@ class DoubleQCritic(nn.Module):
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0)
 
+        if self.policy =='CNN':
+            obs = self.flatten(obs)
         obs_action = torch.cat([obs, action], dim=-1)
         q1 = self.Q1(obs_action)
         q2 = self.Q2(obs_action)

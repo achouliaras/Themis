@@ -4,6 +4,7 @@
 *.pt
 *.py~
 *.bak
+*.mp4
 .pytest_cache
 .DS_Store
 .idea

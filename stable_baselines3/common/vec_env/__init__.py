@@ -1,13 +1,15 @@
-# flake8: noqa F401
 import typing
 from copy import deepcopy
 from typing import Optional, Type, Union
 
 from stable_baselines3.common.vec_env.base_vec_env import CloudpickleWrapper, VecEnv, VecEnvWrapper
 from stable_baselines3.common.vec_env.dummy_vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env.stacked_observations import StackedObservations
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 from stable_baselines3.common.vec_env.vec_check_nan import VecCheckNan
+from stable_baselines3.common.vec_env.vec_extract_dict_obs import VecExtractDictObs
 from stable_baselines3.common.vec_env.vec_frame_stack import VecFrameStack
+from stable_baselines3.common.vec_env.vec_monitor import VecMonitor
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 from stable_baselines3.common.vec_env.vec_transpose import VecTransposeImage
 from stable_baselines3.common.vec_env.vec_video_recorder import VecVideoRecorder
@@ -63,7 +65,30 @@ def sync_envs_normalization(env: "GymEnv", eval_env: "GymEnv") -> None:
     env_tmp, eval_env_tmp = env, eval_env
     while isinstance(env_tmp, VecEnvWrapper):
         if isinstance(env_tmp, VecNormalize):
-            eval_env_tmp.obs_rms = deepcopy(env_tmp.obs_rms)
+            # Only synchronize if observation normalization exists
+            if hasattr(env_tmp, "obs_rms"):
+                eval_env_tmp.obs_rms = deepcopy(env_tmp.obs_rms)
             eval_env_tmp.ret_rms = deepcopy(env_tmp.ret_rms)
         env_tmp = env_tmp.venv
         eval_env_tmp = eval_env_tmp.venv
+
+
+__all__ = [
+    "CloudpickleWrapper",
+    "VecEnv",
+    "VecEnvWrapper",
+    "DummyVecEnv",
+    "StackedObservations",
+    "SubprocVecEnv",
+    "VecCheckNan",
+    "VecExtractDictObs",
+    "VecFrameStack",
+    "VecMonitor",
+    "VecNormalize",
+    "VecTransposeImage",
+    "VecVideoRecorder",
+    "unwrap_vec_wrapper",
+    "unwrap_vec_normalize",
+    "is_vecenv_wrapped",
+    "sync_envs_normalization",
+]

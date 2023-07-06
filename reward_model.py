@@ -2,16 +2,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.utils.data as data
-import torch.optim as optim
-import itertools
-import tqdm
-import copy
-import scipy.stats as st
-import os
 import time
+import human_interface as ui
 
-from scipy.stats import norm
 
 device = 'cpu'
 
@@ -84,12 +77,10 @@ def compute_smallest_dist(obs, full_obs):
 class RewardModel:
     def __init__(self, ds, da, 
                  ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
-                 env_maker=None, max_size=100, activation='tanh', capacity=5e5,  
-                 large_batch=1, label_margin=0.0, 
-                 teacher_beta=-1, teacher_gamma=1, 
-                 teacher_eps_mistake=0, 
-                 teacher_eps_skip=0, 
-                 teacher_eps_equal=0):
+                 env=None, seed = 0, max_size=100, activation='tanh', capacity=5e5,  
+                 large_batch=1, label_margin=0.0, human_teacher=False,
+                 teacher_beta=-1, teacher_gamma=1, teacher_eps_mistake=0, 
+                 teacher_eps_skip=0, teacher_eps_equal=0):
         
         # train data is trajectories, must process to sa and s..   
         self.ds = ds
@@ -127,7 +118,10 @@ class RewardModel:
         self.best_action = []
         self.large_batch = large_batch
         
+        self.env = env
+        self.seed = seed
         # new teacher
+        self.human_teacher = human_teacher
         self.teacher_beta = teacher_beta
         self.teacher_gamma = teacher_gamma
         self.teacher_eps_mistake = teacher_eps_mistake
@@ -271,11 +265,6 @@ class RewardModel:
         keys_to_save =['inputs', 'targets', 'paramlst']
         payload = payload | {k: self.__dict__[k] for k in keys_to_save}
         torch.save(payload, '%s/reward_model_%s.pt' % (model_dir, step))
-
-        # for member in range(self.de):
-        #     torch.save(
-        #         self.ensemble[member].state_dict(), '%s/reward_model_%s_%s.pt' % (model_dir, step, member)
-        #     )
             
     def load(self, model_dir, step):
         payload = torch.load('%s/reward_model_%s.pt' % (model_dir, step))
@@ -285,11 +274,6 @@ class RewardModel:
         
         for i in range(self.de): 
             self.ensemble[i].load_state_dict(payload[f'member_{i}'])
-
-        # for member in range(self.de):
-        #     self.ensemble[member].load_state_dict(
-        #         torch.load('%s/reward_model_%s_%s.pt' % (model_dir, step, member))
-        #     )
     
     def get_train_acc(self):
         ensemble_acc = np.array([0 for _ in range(self.de)])
@@ -323,7 +307,7 @@ class RewardModel:
         ensemble_acc = ensemble_acc / total
         return np.mean(ensemble_acc)
     
-    def get_queries(self, mb_size=20, first_flag=0):
+    def get_queries(self, mb_size=20):
         input_lengths = [len(x) for x in self.inputs]       # lenght of each trajectory
 
         if len(input_lengths)==1:
@@ -337,7 +321,7 @@ class RewardModel:
             max_len = max_len - 1           # do not consider the last trajectory if it is too small
 
         size_segment=self.size_segment
-        if len_traj < size_segment:         # If you ask for segment smaller than the min traj len
+        if len_traj <= size_segment:         # If you ask for segment smaller than the min traj len
             size_segment = len_traj-1
 
         #img_t_1, img_t_2 = None, None
@@ -428,58 +412,74 @@ class RewardModel:
             np.copyto(self.buffer_label[self.buffer_index:next_index], labels)
             self.buffer_index = next_index
             
-    def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
+    def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2, first_flag=False):
         sum_r_t_1 = np.sum(r_t_1, axis=1)
         sum_r_t_2 = np.sum(r_t_2, axis=1)
 
-        # HUMAN Feedback???
+        if self.human_teacher:
+            #print(sa_t_1.shape[0])
+            #print(self.env.observation_space.shape[0])
 
-        # skip the query
-        if self.teacher_thres_skip > 0: 
-            max_r_t = np.maximum(sum_r_t_1, sum_r_t_2)
-            max_index = (max_r_t > self.teacher_thres_skip).reshape(-1)
-            if sum(max_index) == 0:
-                return None, None, None, None, []
-
-            sa_t_1 = sa_t_1[max_index]
-            sa_t_2 = sa_t_2[max_index]
-            r_t_1 = r_t_1[max_index]
-            r_t_2 = r_t_2[max_index]
-            sum_r_t_1 = np.sum(r_t_1, axis=1)
-            sum_r_t_2 = np.sum(r_t_2, axis=1)
-        
-        # equally preferable
-        margin_index = (np.abs(sum_r_t_1 - sum_r_t_2) < self.teacher_thres_equal).reshape(-1)
-        
-        # perfectly rational
-        seg_size = r_t_1.shape[0]
-        temp_r_t_1 = r_t_1.copy()
-        temp_r_t_2 = r_t_2.copy()
-        for index in range(seg_size-1):
-            temp_r_t_1[:index+1] *= self.teacher_gamma
-            temp_r_t_2[:index+1] *= self.teacher_gamma
-        sum_r_t_1 = np.sum(temp_r_t_1, axis=1)
-        sum_r_t_2 = np.sum(temp_r_t_2, axis=1)
+            clips1 = ui.generate_frames(sa_t_1, self.env, self.seed)
+            clips2 = ui.generate_frames(sa_t_2, self.env, self.seed)
             
-        rational_labels = 1*(sum_r_t_1 < sum_r_t_2)
-        if self.teacher_beta > 0: # Bradley-Terry rational model
-            r_hat = torch.cat([torch.Tensor(sum_r_t_1), 
-                               torch.Tensor(sum_r_t_2)], axis=-1)
-            r_hat = r_hat*self.teacher_beta
-            ent = F.softmax(r_hat, dim=-1)[:, 1]
-            labels = torch.bernoulli(ent).int().numpy().reshape(-1, 1)
-        else:
-            labels = rational_labels
-        
-        # making a mistake
-        len_labels = labels.shape[0]
-        rand_num = np.random.rand(len_labels)
-        noise_index = rand_num <= self.teacher_eps_mistake
-        labels[noise_index] = 1 - labels[noise_index]
+            ui.generate_merged_clip(clips1, clips2, 'TestMergedClips.mp4')
 
-        # equally preferable
-        labels[margin_index] = -1 
+            # Get human input
+            labels =[]
+            labels = ui.get_input_keyboad(self.mb_size)
+
+            if len(labels) == 0:
+                return None, None, None, None, []
+        else:
+            # skip the query
+            if self.teacher_thres_skip > 0: 
+                max_r_t = np.maximum(sum_r_t_1, sum_r_t_2)
+                max_index = (max_r_t > self.teacher_thres_skip).reshape(-1)
+                if sum(max_index) == 0:
+                    return None, None, None, None, []
+
+                sa_t_1 = sa_t_1[max_index]
+                sa_t_2 = sa_t_2[max_index]
+                r_t_1 = r_t_1[max_index]
+                r_t_2 = r_t_2[max_index]
+                sum_r_t_1 = np.sum(r_t_1, axis=1)
+                sum_r_t_2 = np.sum(r_t_2, axis=1)
+            
+            # equally preferable
+            margin_index = (np.abs(sum_r_t_1 - sum_r_t_2) < self.teacher_thres_equal).reshape(-1)
+            
+            # perfectly rational
+            seg_size = r_t_1.shape[0]
+            temp_r_t_1 = r_t_1.copy()
+            temp_r_t_2 = r_t_2.copy()
+            for index in range(seg_size-1):
+                temp_r_t_1[:index+1] *= self.teacher_gamma
+                temp_r_t_2[:index+1] *= self.teacher_gamma
+            sum_r_t_1 = np.sum(temp_r_t_1, axis=1)
+            sum_r_t_2 = np.sum(temp_r_t_2, axis=1)
+            
+            rational_labels = 1*(sum_r_t_1 < sum_r_t_2)
+            if self.teacher_beta > 0: # Bradley-Terry rational model
+                r_hat = torch.cat([torch.Tensor(sum_r_t_1), 
+                                torch.Tensor(sum_r_t_2)], axis=-1)
+                r_hat = r_hat*self.teacher_beta
+                ent = F.softmax(r_hat, dim=-1)[:, 1]
+                labels = torch.bernoulli(ent).int().numpy().reshape(-1, 1)
+            else:
+                labels = rational_labels
         
+            # making a mistake
+            len_labels = labels.shape[0]
+            rand_num = np.random.rand(len_labels)
+            noise_index = rand_num <= self.teacher_eps_mistake
+            labels[noise_index] = 1 - labels[noise_index]
+
+            # equally preferable
+            labels[margin_index] = -1 
+
+            #print(labels)
+
         return sa_t_1, sa_t_2, r_t_1, r_t_2, labels
     
     def kcenter_sampling(self):
@@ -605,10 +605,10 @@ class RewardModel:
     
     def uniform_sampling(self, first_flag=0):
         # get queries
-        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(mb_size=self.mb_size, first_flag=first_flag)
+        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(mb_size=self.mb_size)
             
         # get labels
-        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(sa_t_1, sa_t_2, r_t_1, r_t_2)
+        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(sa_t_1, sa_t_2, r_t_1, r_t_2, first_flag=first_flag)
         
         if len(labels) > 0:
             self.put_queries(sa_t_1, sa_t_2, labels)

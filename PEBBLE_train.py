@@ -41,16 +41,16 @@ class Workspace(object):
         
         # make envs
         if 'Control' in cfg.domain:
-            self.env, self.eval_env = utils.make_control_env(cfg, cfg.render_mode)
+            self.env, self.eval_env, self.sim_env = utils.make_control_env(cfg, cfg.render_mode)
             self.log_success = True
         elif 'ALE' in cfg.domain:
-            self.env, self.eval_env = utils.make_atari_env(cfg, cfg.render_mode)
+            self.env, self.eval_env, self.sim_env = utils.make_atari_env(cfg, cfg.render_mode)
             self.log_success = True
         elif 'Box2D' in cfg.domain:
-            self.env, self.eval_env = utils.make_box2d_env(cfg, cfg.render_mode)
+            self.env, self.eval_env, self.sim_env = utils.make_box2d_env(cfg, cfg.render_mode)
             self.log_success = True
-        elif 'MiniGrid' in cfg.domain:
-            self.env, self.eval_env = utils.make_minigrid_env(cfg, cfg.render_mode)
+        elif 'MiniGrid' in cfg.domain or 'BabyAI' in cfg.domain:
+            self.env, self.eval_env, self.sim_env = utils.make_minigrid_env(cfg, cfg.render_mode)
             self.log_success = True
         else:
             raise NotImplementedError
@@ -84,9 +84,12 @@ class Workspace(object):
             size_segment=cfg.segment,
             activation=cfg.activation, 
             lr=cfg.reward_lr,
+            env = self.sim_env,                             # Decouple Later
+            seed = cfg.seed,
             mb_size=cfg.reward_batch, 
             large_batch=cfg.large_batch, 
-            label_margin=cfg.label_margin, 
+            label_margin=cfg.label_margin,
+            human_teacher=cfg.human_teacher,
             teacher_beta=cfg.teacher_beta, 
             teacher_gamma=cfg.teacher_gamma, 
             teacher_eps_mistake=cfg.teacher_eps_mistake, 
@@ -153,12 +156,12 @@ class Workspace(object):
             self.logger.log('train/true_episode_success', success_rate, self.step)
         self.logger.dump(self.step)
     
-    def learn_reward(self, first_flag=0):    
+    def learn_reward(self, first_flag=False):    
         # get feedbacks
         labeled_queries, noisy_queries = 0, 0
-        if first_flag == 1:
+        if first_flag == True:
             # if it is first time to get feedback, need to use random sampling
-            labeled_queries = self.reward_model.uniform_sampling(first_flag=1)
+            labeled_queries = self.reward_model.uniform_sampling(first_flag=True)
         else:
             if self.cfg.feed_type == 0:
                 labeled_queries = self.reward_model.uniform_sampling()
@@ -209,7 +212,7 @@ class Workspace(object):
         interact_count = 0
         while self.step < self.cfg.num_train_steps:
             if terminated or truncated:
-                if self.step > 0:
+                if self.step > self.start_step:
                     episode_time = time.time() - start_time
                     self.logger.log('train/duration', episode_time, self.step)
                     total_time += episode_time
@@ -362,17 +365,11 @@ def main(cfg : DictConfig):
         exit()
 
     workspace = Workspace(cfg, work_dir)
-    print("ALL GOOD") #Time to check if models are correct. If run works and then work at generating gifs
     
     workspace.run()
     if snapshot.exists():
-        print(f'Overwriting: {snapshot}')
-    else:
-        print(f'Creating: {snapshot}')
+        print(f'Overwriting models at: {work_dir}')
     workspace.save_snapshot()
-
-
-    
 
 if __name__ == '__main__':
     main()

@@ -29,14 +29,15 @@ def compute_state_entropy(obs, full_obs, k):
 
 class SACAgent(Agent):
     """SAC algorithm."""
-    def __init__(self, obs_dim, action_dim, action_range, device, critic_cfg,
+    def __init__(self, obs_space, obs_dim, action_dim, action_range, device, critic_cfg,
                  actor_cfg, discount, init_temperature, alpha_lr, alpha_betas,
                  actor_lr, actor_betas, actor_update_frequency, critic_lr,
                  critic_betas, critic_tau, critic_target_update_frequency,
-                 batch_size, learnable_temperature,
+                 batch_size, policy, learnable_temperature,
                  normalize_state_entropy=True):
         super().__init__()
 
+        self.obs_space = obs_space
         self.action_range = action_range
         self.device = torch.device(device)
         self.discount = discount
@@ -57,11 +58,11 @@ class SACAgent(Agent):
         self.actor_betas = actor_betas
         self.alpha_lr = alpha_lr
 
-        self.critic = hydra.utils.instantiate(critic_cfg).to(self.device)
-        self.critic_target = hydra.utils.instantiate(critic_cfg).to(
+        self.critic = hydra.utils.instantiate(critic_cfg, _convert_="all").to(self.device)
+        self.critic_target = hydra.utils.instantiate(critic_cfg, _convert_="all").to(
             self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.actor = hydra.utils.instantiate(actor_cfg).to(self.device)
+        self.actor = hydra.utils.instantiate(actor_cfg, _convert_="all").to(self.device)
         self.log_alpha = torch.tensor(np.log(init_temperature)).to(self.device)
         self.log_alpha.requires_grad = True
         
