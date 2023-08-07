@@ -20,26 +20,30 @@ def generate_frames(sa_t, env, seed):
 
     return clips
 
-def generate_merged_clip(frames1, frames2, clipname='TestMergedClips.mp4'):
+def generate_merged_clip(frames1, frames2, clipname='TestMergedClips', format='mp4'):
+    p = Path('Clips')
+    p.mkdir(exist_ok=True)
+
     clips1=[]
     for i, clip1 in enumerate(frames1):
         filename = f'TESTclip1_{i}.mp4'
-        with open(filename, 'wb') as file1:
-            imageio.mimsave(filename, clip1, fps=20)
-        clips1.append(VideoFileClip(f'TESTclip1_{i}.mp4').margin(10))
+        with open(p / filename, 'wb') as file1:
+            imageio.mimsave(p / filename, clip1, fps=20)
+        clips1.append(VideoFileClip(str(p / filename)).margin(10))
     
     clips2=[]
     for i, clip2 in enumerate(frames2):
         filename = f'TESTclip2_{i}.mp4'
-        with open(filename, 'wb') as file2:
-            imageio.mimsave(filename, clip2, fps=20)
-        clips2.append(VideoFileClip(f'TESTclip2_{i}.mp4').margin(10))
+        with open(p / filename, 'wb') as file2:
+            imageio.mimsave(p / filename, clip2, fps=20)
+        clips2.append(VideoFileClip(str(p / filename)).margin(10))
 
     multiclip = clips_array([[i for i in clips1],[i for i in clips2]])
     multiclip.write_videofile(clipname)
+    multiclip.write_videofile(str(p)+'/'+clipname +'.' + format, threads=4, logger = None)
 
-    i=[os.remove(f'TESTclip1_{i}.mp4') for i, clip1 in enumerate(frames1)]
-    i=[os.remove(f'TESTclip2_{i}.mp4') for i, clip1 in enumerate(frames2)]
+    i=[os.remove(p / f'TESTclip1_{i}.mp4') for i, clip1 in enumerate(frames1)]
+    i=[os.remove(p / f'TESTclip2_{i}.mp4') for i, clip1 in enumerate(frames2)]
 
 def generate_paired_clips(frames1, frames2, clipname='TestPairClip', format='mp4'):
     p = Path('Clips')

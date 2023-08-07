@@ -11,31 +11,41 @@ pip install git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworl
 pip install pybullet
 ```
 
-## Run experiments using GT rewards
+## Supported Gym environments
 
+- MuJoCo (eg. domain=Control env=Humanoid-v4)
+- Atari (eg. domain=ALE env=Breakout-v5)
+- Box2d (eg. domain=Box2d env=Humanoid-v4)
+- Minigrid (eg. domain=Minigrid env=DistShift1-v0)
+- BabyAI (eg. domain=BabyAI env=GoToRedBallGrey-v0)
 
-### SAC & SAC + unsupervised pre-training
+You can manually add more environments as long as they follow the Gym format.
+
+## Clip Sampling Options
+
+- Uniform Sampling        (feed_type=0)
+- Disagreement Sampling   (feed_type=1)
+- Entropy Sampling        (feed_type=2)
+- K Center                (feed_type=3)
+- K Center + Disagreement (feed_type=4)
+- K Center + Entropy      (feed_type=5)
+
+### SAC + unsupervised pre-training
 
 Experiments can be reproduced with the following:
 
 ```
-./scripts/[env_name]/run_sac.sh 
-./scripts/[env_name]/run_sac_unsuper.sh
+./run_pretrain.sh 
+./run_train.sh 
 ```
 
+## Run experiments on human teachers
+Be sure to change the flag '''human_teacher''' to True.
+The method '''get_labels''' in the file '''reward_model.py''' contains the logic to generate clips ang receive input from the user. Explore the available tools from the '''human_interface.py'''
 
-### PPO & PPO + unsupervised pre-training
+## Run experiments on synthetic teachers
 
-Experiments can be reproduced with the following:
-
-```
-./scripts/[env_name]/run_ppo.sh 
-./scripts/[env_name]/run_ppo_unsuper.sh
-```
-
-## Run experiments on irrational teacher
-
-To design more realistic models of human teachers, we consider a common stochastic model and systematically manipulate its terms and operators:
+The tools from BPref to tweak the synthetic teacher are supported and work in the same way:
 
 ```
 teacher_beta: rationality constant of stochastic preference model (default: -1 for perfectly rational model)
@@ -58,23 +68,4 @@ In B-Pref, we tried the following teachers:
 `Myopic teacher`: (teacher_beta=-1, teacher_gamma=0.9, teacher_eps_mistake=0, teacher_eps_skip=0, teacher_eps_equal=0)
 
 `Equal teacher`: (teacher_beta=-1, teacher_gamma=1, teacher_eps_mistake=0, teacher_eps_skip=0, teacher_eps_equal=0.1)
-
-
-### PEBBLE
-
-Experiments can be reproduced with the following:
-
-```
-./scripts/[env_name]/[teacher_type]/[max_budget]/run_PEBBLE.sh [sampling_scheme: 0=uniform, 1=disagreement, 2=entropy]
-```
-
-### PrefPPO
-
-Experiments can be reproduced with the following:
-
-```
-./scripts/[env_name]/[teacher_type]/[max_budget]/run_PrefPPO.sh [sampling_scheme: 0=uniform, 1=disagreement, 2=entropy]
-```
-
-note: full hyper-paramters for meta-world will be updated soon!
 

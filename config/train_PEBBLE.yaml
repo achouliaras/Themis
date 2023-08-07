@@ -21,6 +21,8 @@ ensemble_size: 3
 max_feedback: 1400
 large_batch: 10
 label_margin: 0.0
+reward_scale: 1.0
+reward_intercept: 0.0
 human_teacher: False
 teacher_beta: -1    # Rationality Constant 0 leads to random choices and infinite (-1) to perfectly rational
 teacher_gamma: 1    # Discound Factor for myopic behavior paying more attention on recent states

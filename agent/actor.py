@@ -6,7 +6,8 @@ import lib.utils as utils
 
 from torch import nn
 from torch import distributions as pyd
-from torch.distributions.categorical import Categorical
+#from torch.distributions.categorical import Categorical
+from stable_baselines3.common.distributions import CategoricalDistribution
 
 class TanhTransform(pyd.transforms.Transform):
     domain = pyd.constraints.real
@@ -57,7 +58,7 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
 
 class DiagGaussianActor(nn.Module):
     """torch.distributions implementation of an diagonal Gaussian policy for continuous environments."""
-    def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth,
+    def __init__(self, obs_dim, action_dim, policy, hidden_dim, hidden_depth,
                  log_std_bounds):
         super().__init__()
 
@@ -94,17 +95,19 @@ class DiagGaussianActor(nn.Module):
 class CategoricalActor(nn.Module):
     """torch.distributions implementation of a categorical policy for discrete environments."""
     def __init__(self, obs_space, obs_dim, action_dim, policy, hidden_dim, hidden_depth,
-                 log_std_bounds):
+                 log_std_bounds, mode=0):
         super().__init__()
         self.obs_space = obs_space
         self.policy = policy
         self.log_std_bounds = log_std_bounds
+        self.categorical = CategoricalDistribution(action_dim)
 
-        print(obs_dim[-1])
+        #print(obs_space.shape[0]) # Needs reshape to 3,7,7
         if policy =='CNN':
-            self.cnn, self.trunk = utils.cnn(obs_space, obs_dim[-1], hidden_dim, 2 * action_dim, hidden_depth)
-        else:
-            self.trunk = utils.mlp(obs_dim, hidden_dim, 2 * action_dim, hidden_depth)
+            self.cnn, self.flatten = utils.cnn(obs_space, obs_dim[0], mode=mode)
+            obs_dim = self.flatten
+            
+        self.trunk = utils.mlp(obs_dim, hidden_dim, action_dim, hidden_depth)
 
         self.outputs = dict()
         self.apply(utils.weight_init)
@@ -115,8 +118,8 @@ class CategoricalActor(nn.Module):
         else:
             x = self.trunk(obs)
     
-        dist = Categorical(logits=F.log_softmax(x, dim=1))
-        return dist
+        dist = F.softmax(x, dim=1)
+        return self.categorical.proba_distribution(action_logits=dist)
 
     def log(self, logger, step):
         for k, v in self.outputs.items():

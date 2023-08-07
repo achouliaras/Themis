@@ -11,8 +11,10 @@ from pathlib import Path
 import time
 import pickle as pkl
 import tqdm
+import copy
 
 from lib.logger import Logger
+from agent.sac import SACAgent
 from replay_buffer import ReplayBuffer
 from lib.reward_model import RewardModel
 from collections import deque
@@ -20,6 +22,7 @@ from collections import deque
 import lib.utils as utils
 import hydra
 from omegaconf import DictConfig, OmegaConf
+from gymnasium.spaces import utils as gym_utils
 
 class Workspace(object):
     def __init__(self, cfg, work_dir):
@@ -43,6 +46,28 @@ class Workspace(object):
         if 'Control' in cfg.domain:
             self.env, self.eval_env, self.sim_env = utils.make_control_env(cfg, cfg.render_mode)
             self.log_success = True
+
+            # Setup Agent
+            self.action_type = 'Cont'
+            self.policy = 'MLP'
+            self.mode = 0
+            self.obs_space = self.env.observation_space
+            action_space = self.env.action_space.shape
+            cfg.agent.obs_dim = self.env.observation_space.shape[0]
+            cfg.agent.action_dim = self.env.action_space.shape[0]
+            cfg.agent.action_range = [
+                float(self.env.action_space.low.min()),
+                float(self.env.action_space.high.max())
+            ]
+            #cfg.agent.actor_cfg = '${diag_gaussian_actor}' find another way to do this
+            critic_cfg = cfg.double_q_critic,
+            actor_cfg = cfg.diag_gaussian_actor,
+        
+            critic_cfg[0].action_type = self.action_type
+            critic_cfg[0].policy = self.policy
+            
+            actor_cfg[0].action_type = self.action_type
+            actor_cfg[0].policy = self.policy
         elif 'ALE' in cfg.domain:
             self.env, self.eval_env, self.sim_env = utils.make_atari_env(cfg, cfg.render_mode)
             self.log_success = True
@@ -52,6 +77,24 @@ class Workspace(object):
         elif 'MiniGrid' in cfg.domain or 'BabyAI' in cfg.domain:
             self.env, self.eval_env, self.sim_env = utils.make_minigrid_env(cfg, cfg.render_mode)
             self.log_success = True
+
+            self.action_type = 'Discrete'
+            self.policy = 'CNN'
+            self.mode = 1
+            self.obs_space = self.env.observation_space['image'] 
+            action_space = [1]                                                # or 7?
+            cfg.agent.obs_dim = self.env.observation_space['image'].shape
+            cfg.agent.action_dim = int(self.env.action_space.n)
+            cfg.agent.batch_size = 256
+            cfg.agent.action_range = [0,1]
+            critic_cfg = cfg.double_q_critic,
+            actor_cfg = cfg.categorical_actor,
+        
+            critic_cfg[0].action_type = self.action_type
+            critic_cfg[0].policy = self.policy
+
+            actor_cfg[0].action_type = self.action_type
+            actor_cfg[0].policy = self.policy
         else:
             raise NotImplementedError
         
@@ -60,14 +103,30 @@ class Workspace(object):
         self.replay_buffer, self.step, self.episode = [payload[k] for k in keys_to_load]
 
         # Setup Agent
-        cfg.agent.obs_dim = self.env.observation_space.shape[0]
-        cfg.agent.action_dim = self.env.action_space.shape[0]
-        cfg.agent.action_range = [
-            float(self.env.action_space.low.min()),
-            float(self.env.action_space.high.max())
-        ]
+        self.agent = SACAgent(obs_space = self.obs_space,
+            obs_dim = cfg.agent.obs_dim, 
+            action_dim = cfg.agent.action_dim, 
+            action_range = cfg.agent.action_range, 
+            device = cfg.agent.device, 
+            critic_cfg = critic_cfg[0],
+            actor_cfg = actor_cfg[0], 
+            discount = cfg.agent.discount, 
+            init_temperature = cfg.agent.init_temperature, 
+            alpha_lr = cfg.agent.alpha_lr, 
+            alpha_betas = cfg.agent.alpha_betas,
+            actor_lr = cfg.agent.actor_lr, 
+            actor_betas = cfg.agent.actor_betas, 
+            actor_update_frequency = cfg.agent.actor_update_frequency, 
+            critic_lr = cfg.agent.critic_lr,
+            critic_betas = cfg.agent.critic_betas, 
+            critic_tau = cfg.agent.critic_tau, 
+            critic_target_update_frequency = cfg.agent.critic_target_update_frequency,
+            batch_size =cfg.agent.batch_size,
+            policy = self.policy,
+            mode= self.mode, 
+            learnable_temperature = cfg.agent.learnable_temperature,
+            normalize_state_entropy = True)
         
-        self.agent = hydra.utils.instantiate(cfg.agent, _recursive_=False)
         self.agent.load(snapshot_dir, self.global_frame)
         
         # for logging
@@ -78,18 +137,15 @@ class Workspace(object):
         
         # instantiating the reward model
         self.reward_model = RewardModel(
-            self.env.observation_space.shape[0],
-            self.env.action_space.shape[0],
+            gym_utils.flatdim(self.obs_space),
+            action_space[0],
             ensemble_size=cfg.ensemble_size,
             size_segment=cfg.segment,
             activation=cfg.activation, 
             lr=cfg.reward_lr,
-            env = self.sim_env,                             # Decouple Later
-            seed = cfg.seed,
             mb_size=cfg.reward_batch, 
             large_batch=cfg.large_batch, 
-            label_margin=cfg.label_margin,
-            human_teacher=cfg.human_teacher,
+            label_margin=cfg.label_margin, 
             teacher_beta=cfg.teacher_beta, 
             teacher_gamma=cfg.teacher_gamma, 
             teacher_eps_mistake=cfg.teacher_eps_mistake, 
@@ -120,6 +176,8 @@ class Workspace(object):
         
         for episode in range(self.cfg.num_eval_episodes):
             obs, info = self.eval_env.reset(seed = self.cfg.seed)
+            if self.action_type == 'Discrete':
+                obs = obs['image']
             self.agent.reset()
             terminated = False
             truncated = False
@@ -137,6 +195,8 @@ class Workspace(object):
                 true_episode_reward += reward
                 if self.log_success:
                     episode_success = max(episode_success, terminated)
+                if self.action_type == 'Discrete':
+                    obs = obs['image']
                 
             average_episode_reward += episode_reward
             average_true_episode_reward += true_episode_reward
@@ -238,6 +298,10 @@ class Workspace(object):
                     self.logger.log('train/true_episode_success', episode_success, self.step)
                 
                 obs, info = self.env.reset(seed = self.cfg.seed)
+
+                if self.action_type == 'Discrete':
+                    obs = obs['image']
+
                 self.agent.reset()
                 terminated = False
                 truncated = False
@@ -327,7 +391,13 @@ class Workspace(object):
   
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
-            reward_hat = self.reward_model.r_hat(np.concatenate([obs, action], axis=-1))
+            if self.action_type == 'Discrete':
+                next_obs = next_obs['image']
+                action = np.array([action], dtype=np.uint8)
+            
+            obs_flat = gym_utils.flatten(self.obs_space,obs)
+
+            reward_hat = self.reward_model.r_hat(np.concatenate([obs_flat, action], axis=-1))
 
             # allow infinite bootstrap
             terminated = float(terminated)

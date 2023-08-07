@@ -9,7 +9,7 @@ import math
 from collections import deque
 from gymnasium.wrappers.time_limit import TimeLimit
 from rlkit.envs.wrappers import NormalizedBoxEnv
-from collections import deque
+from stable_baselines3.common.env_util import make_atari_env as sb3env
 from skimage.util.shape import view_as_windows
 from torch import nn
 from torch import distributions as pyd
@@ -67,6 +67,7 @@ def make_atari_env(cfg, render_mode=None):
     env = eval_env = sim_env = None
     #Helper function to create Atari environment
     id=cfg.domain+'/'+cfg.env
+    #env = sb3env()
     env = gym.make(id=id, 
                    mode=cfg.mode, 
                    difficulty=cfg.difficulty, 
@@ -255,25 +256,32 @@ def update_mean_var_count_from_moments(
 
     return new_mean, new_var, new_count
 
-def cnn(obs_space, n_input_channels, hidden_dim, output_dim, hidden_depth, output_mod=None):
+def cnn(obs_space, n_input_channels, mode=0):
+
+    kernel_size = [[8,4,3],[2,2,2]] # Parameterisation
+    stride = [[4,2,1],[1,1,1]]
+    padding =[[0,0,0],[0,0,1]]
+
+    kernel_size=kernel_size[mode]
+    stride = stride[mode]
+    padding = padding[mode]
 
     feature_extractor=nn.Sequential(
-        nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4, padding=0),
+        nn.Conv2d(n_input_channels, 32, kernel_size=kernel_size[0], stride=stride[0], padding=padding[0]),
         nn.ReLU(),
-        nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
+        nn.Conv2d(32, 64, kernel_size=kernel_size[1], stride=stride[1], padding=padding[1]),
         nn.ReLU(),
-        nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
+        nn.Conv2d(64, 64, kernel_size=kernel_size[2], stride=stride[2], padding=padding[2]),
         nn.ReLU(),
         nn.Flatten(),
     )
     
     # Compute shape by doing one forward pass
     with torch.no_grad():
+        #print(feature_extractor(torch.as_tensor(obs_space.sample()[None]).float()).shape)
         n_flatten = feature_extractor(torch.as_tensor(obs_space.sample()[None]).float()).shape[1]
-
-    linear = mlp(n_flatten, hidden_dim, output_dim, hidden_depth, output_mod)
     
-    return feature_extractor, linear
+    return feature_extractor, n_flatten
 
 def mlp(input_dim, hidden_dim, output_dim, hidden_depth, output_mod=None):
     if hidden_depth == 0:

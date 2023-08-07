@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time
-import human_interface as ui
+import lib.human_interface as ui
 
 
 device = 'cpu'
@@ -78,7 +78,7 @@ class RewardModel:
     def __init__(self, ds, da, 
                  ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
                  env=None, seed = 0, max_size=100, activation='tanh', capacity=5e5,  
-                 large_batch=1, label_margin=0.0, human_teacher=False,
+                 large_batch=1, label_margin=0.0, reward_scale=1.0, reward_intercept=0.0, human_teacher=False,
                  teacher_beta=-1, teacher_gamma=1, teacher_eps_mistake=0, 
                  teacher_eps_skip=0, teacher_eps_equal=0):
         
@@ -132,6 +132,8 @@ class RewardModel:
         
         self.label_margin = label_margin
         self.label_target = 1 - 2*self.label_margin
+        self.reward_scale = reward_scale
+        self.reward_intercept = reward_intercept
     
     def softXEnt_loss(self, input, target):
         logprobs = torch.nn.functional.log_softmax (input, dim = 1)
@@ -423,8 +425,8 @@ class RewardModel:
             clips1 = ui.generate_frames(sa_t_1, self.env, self.seed)
             clips2 = ui.generate_frames(sa_t_2, self.env, self.seed)
             
-            #ui.generate_merged_clip(clips1, clips2, 'TestMergedClips.mp4')
-            ui.generate_paired_clips(clips1, clips2, 'TestPairClip', 'mp4')
+            ui.generate_merged_clip(clips1, clips2, 'TestMergedClips', 'mp4')
+            #ui.generate_paired_clips(clips1, clips2, 'TestPairClip', 'mp4')
 
             # Get human input
             labels =[]
@@ -699,12 +701,12 @@ class RewardModel:
                 r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
 
                 # compute loss
-                curr_loss = self.CEloss(r_hat, labels)
+                curr_loss = self.CEloss(r_hat, labels*self.reward_scale+self.reward_intercept)      #Reward Shape
                 loss += curr_loss
                 ensemble_losses[member].append(curr_loss.item())
                 
                 # compute acc
-                _, predicted = torch.max(r_hat.data, 1)
+                _, predicted = torch.max(r_hat.data, 1*self.reward_scale+self.reward_intercept)     #Reward Shape
                 correct = (predicted == labels).sum().item()
                 ensemble_acc[member] += correct
                 
@@ -758,16 +760,16 @@ class RewardModel:
                 # compute loss
                 uniform_index = labels == -1
                 labels[uniform_index] = 0
-                target_onehot = torch.zeros_like(r_hat).scatter(1, labels.unsqueeze(1), self.label_target)
+                target_onehot = torch.zeros_like(r_hat).scatter(1, labels.unsqueeze(1), self.label_target*self.reward_scale+self.reward_intercept)  #Reward Shape
                 target_onehot += self.label_margin
                 if sum(uniform_index) > 0:
-                    target_onehot[uniform_index] = 0.5
+                    target_onehot[uniform_index] = 0.5*self.reward_scale+self.reward_intercept      #Reward Shape
                 curr_loss = self.softXEnt_loss(r_hat, target_onehot)
                 loss += curr_loss
                 ensemble_losses[member].append(curr_loss.item())
                 
                 # compute acc
-                _, predicted = torch.max(r_hat.data, 1)
+                _, predicted = torch.max(r_hat.data, 1*self.reward_scale+self.reward_intercept)     #Reward Shape
                 correct = (predicted == labels).sum().item()
                 ensemble_acc[member] += correct
                 

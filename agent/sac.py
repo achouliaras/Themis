@@ -8,24 +8,29 @@ import hydra
 
 from agent import Agent
 from agent.critic import DoubleQCritic
-from agent.actor import DiagGaussianActor
+from agent.actor import DiagGaussianActor, CategoricalActor
 
-def compute_state_entropy(obs, full_obs, k):
+def compute_state_entropy(obs, full_obs, k, action_type):
     batch_size = 500
     with torch.no_grad():
         dists = []
         for idx in range(len(full_obs) // batch_size + 1):
             start = idx * batch_size
             end = (idx + 1) * batch_size
-            dist = torch.norm(
-                obs[:, None, :] - full_obs[None, start:end, :], dim=-1, p=2
-            )
+            if action_type == 'Cont':
+                dist = torch.norm(obs[:, None, :] - full_obs[None, start:end, :], dim=-1, p=2)
+            else:
+                dist = torch.norm(obs[:, None, :] - full_obs[None, start:end, :], dim=(-1,-2), p=2)
             dists.append(dist)
 
         dists = torch.cat(dists, dim=1)
         knn_dists = torch.kthvalue(dists, k=k + 1, dim=1).values
         state_entropy = knn_dists
-    return state_entropy.unsqueeze(1)
+
+    if action_type == 'Cont':
+        return state_entropy.unsqueeze(1)
+    else: 
+        return state_entropy
 
 class SACAgent(Agent):
     """SAC algorithm."""
@@ -33,11 +38,12 @@ class SACAgent(Agent):
                  actor_cfg, discount, init_temperature, alpha_lr, alpha_betas,
                  actor_lr, actor_betas, actor_update_frequency, critic_lr,
                  critic_betas, critic_tau, critic_target_update_frequency,
-                 batch_size, policy, learnable_temperature,
+                 batch_size, policy, learnable_temperature, mode=0,
                  normalize_state_entropy=True):
         super().__init__()
 
         self.obs_space = obs_space
+        self.obs_dim = obs_dim
         self.action_range = action_range
         self.device = torch.device(device)
         self.discount = discount
@@ -57,12 +63,20 @@ class SACAgent(Agent):
         self.actor_cfg = actor_cfg
         self.actor_betas = actor_betas
         self.alpha_lr = alpha_lr
+        self.policy = policy
+        self.action_type = self.actor_cfg.action_type
+        self.mode = mode
 
-        self.critic = hydra.utils.instantiate(critic_cfg, _convert_="all").to(self.device)
-        self.critic_target = hydra.utils.instantiate(critic_cfg, _convert_="all").to(
-            self.device)
+        #self.critic = hydra.utils.instantiate(critic_cfg, _convert_="all").to(self.device)
+        self.critic = self.create_critic()
+        #self.critic_target = hydra.utils.instantiate(critic_cfg, _convert_="all").to(self.device)
+        self.critic_target = self.create_critic()
+        
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.actor = hydra.utils.instantiate(actor_cfg, _convert_="all").to(self.device)
+
+        #self.actor = hydra.utils.instantiate(actor_cfg, _convert_="all").to(self.device)
+        self.actor = self.create_actor()
+        
         self.log_alpha = torch.tensor(np.log(init_temperature)).to(self.device)
         self.log_alpha.requires_grad = True
         
@@ -87,10 +101,44 @@ class SACAgent(Agent):
         self.train()
         self.critic_target.train()
     
+    def create_critic(self):
+        critic = DoubleQCritic(obs_space = self.obs_space, 
+            obs_dim= self.obs_dim,
+            action_dim= self.critic_cfg.action_dim,
+            action_type= self.critic_cfg.action_type,
+            policy= self.critic_cfg.policy,
+            hidden_dim= self.critic_cfg.hidden_dim,
+            hidden_depth= self.critic_cfg.hidden_depth,
+            mode= self.mode).to(self.device)
+        return critic
+    
+    def create_actor(self):
+        if self.actor_cfg.action_type == 'Cont':
+            #self.actor = hydra.utils.instantiate(actor_cfg, _convert_="all").to(self.device)
+            actor = DiagGaussianActor(obs_dim = self.actor_cfg.obs_dim, 
+                action_dim = self.actor_cfg.action_dim,
+                #action_type = self.actor_cfg.action_type,
+                policy = self.actor_cfg.policy,
+                hidden_dim = self.actor_cfg.hidden_dim, 
+                hidden_depth = self.actor_cfg.hidden_depth,
+                log_std_bounds = self.actor_cfg.log_std_bounds).to(self.device)
+        elif self.actor_cfg.action_type == 'Discrete':
+            actor = CategoricalActor(obs_space = self.obs_space, 
+                obs_dim = self.actor_cfg.obs_dim, 
+                action_dim = self.actor_cfg.action_dim,
+                #action_type = self.actor_cfg.action_type, 
+                policy = self.actor_cfg.policy, 
+                hidden_dim = self.actor_cfg.hidden_dim, 
+                hidden_depth = self.actor_cfg.hidden_depth,
+                log_std_bounds = self.actor_cfg.log_std_bounds,
+                mode= self.mode).to(self.device)
+        return actor
+    
     def reset_critic(self):
-        self.critic = hydra.utils.instantiate(self.critic_cfg).to(self.device)
-        self.critic_target = hydra.utils.instantiate(self.critic_cfg).to(
-            self.device)
+        #self.critic = hydra.utils.instantiate(self.critic_cfg).to(self.device)
+        #self.critic_target = hydra.utils.instantiate(self.critic_cfg).to(self.device)
+        self.critic = self.create_critic()
+        self.critic_target = self.create_critic()
         self.critic_target.load_state_dict(self.critic.state_dict())
         self.critic_optimizer = torch.optim.Adam(
             self.critic.parameters(),
@@ -107,7 +155,8 @@ class SACAgent(Agent):
             betas=self.alpha_betas)
         
         # reset actor
-        self.actor = hydra.utils.instantiate(self.actor_cfg).to(self.device)
+        #self.actor = hydra.utils.instantiate(self.actor_cfg).to(self.device)
+        self.actor = self.create_actor()
         self.actor_optimizer = torch.optim.Adam(
             self.actor.parameters(),
             lr=self.actor_lr,
@@ -122,20 +171,28 @@ class SACAgent(Agent):
     def alpha(self):
         return self.log_alpha.exp()
 
-    def act(self, obs, sample=False):
+    def act(self, obs, sample=False, determ=True):
         obs = torch.FloatTensor(obs).to(self.device)
         obs = obs.unsqueeze(0)
         dist = self.actor(obs)
-        action = dist.sample() if sample else dist.mean
-        action = action.clamp(*self.action_range)
-        assert action.ndim == 2 and action.shape[0] == 1
-        return utils.to_np(action[0])
+        if self.action_type == 'Cont':
+            action = dist.sample() if sample else dist.mean         
+            action = action.clamp(*self.action_range)
+            assert action.ndim == 2 and action.shape[0] == 1
+            return utils.to_np(action[0])
+        elif self.action_type == 'Discrete':
+            action = dist.get_actions(deterministic=determ)
+            return utils.to_np(action[0])
 
     def update_critic(self, obs, action, reward, next_obs, 
                       not_done, logger, step, print_flag=True):
         
         dist = self.actor(next_obs)
-        next_action = dist.rsample()
+        if self.action_type == 'Cont':
+            next_action = dist.rsample()
+        elif self.action_type == 'Discrete':
+            next_action = dist.get_actions(deterministic=True)
+        
         log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
         target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
         target_V = torch.min(target_Q1,
@@ -145,8 +202,8 @@ class SACAgent(Agent):
 
         # get current Q estimates
         current_Q1, current_Q2 = self.critic(obs, action)
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-            current_Q2, target_Q)
+        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q) # FIX based on All Q-values
+        # Use action to take the suitable Q value
         
         if print_flag:
             logger.log('train_critic/loss', critic_loss, step)
@@ -162,13 +219,20 @@ class SACAgent(Agent):
         step, K=5, print_flag=True):
         
         dist = self.actor(next_obs)
-        next_action = dist.rsample()
-        log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+        if self.action_type == 'Cont':
+            next_action = dist.rsample()
+            log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+        elif self.action_type == 'Discrete':
+            next_action = dist.get_actions(deterministic=True)
+            log_prob = dist.distribution.logits.sum(0, keepdim=True)
+        
         target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
         target_V = torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_prob
-        
+        #print('Target V= ',target_V.shape)
+
         # compute state entropy
-        state_entropy = compute_state_entropy(obs, full_obs, k=K)
+        state_entropy = compute_state_entropy(obs, full_obs, k=K, action_type=self.action_type)
+        #print('State entropy = ', state_entropy.shape)
         if print_flag:
             logger.log("train_critic/entropy", state_entropy.mean(), step)
             logger.log("train_critic/entropy_max", state_entropy.max(), step)
@@ -190,8 +254,10 @@ class SACAgent(Agent):
 
         # get current Q estimates
         current_Q1, current_Q2 = self.critic(obs, action)
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-            current_Q2, target_Q)
+        #print('Curr Q1= ',current_Q1.shape)
+        #print('Curr Q2= ',current_Q2.shape)
+        #print('Target Q= ',target_Q.shape)
+        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q) # FIX based on All Q-values
         
         if print_flag:
             logger.log('train_critic/loss', critic_loss, step)
@@ -227,9 +293,13 @@ class SACAgent(Agent):
     
     def update_actor_and_alpha(self, obs, logger, step, print_flag=False):
         dist = self.actor(obs)
-        action = dist.rsample()
+        if self.action_type == 'Cont':
+            action = dist.rsample()
+        elif self.action_type == 'Discrete':
+            action = dist.get_actions(deterministic=True)
+        
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        actor_Q1, actor_Q2 = self.critic(obs, action)
+        actor_Q1, actor_Q2 = self.critic(obs, action)                           # FIX based on All Q-values taken
 
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()

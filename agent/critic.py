@@ -7,17 +7,22 @@ from torch import nn
 
 class DoubleQCritic(nn.Module):
     """Critic network, employes double Q-learning."""
-    def __init__(self, obs_dim, action_dim, policy, hidden_dim, hidden_depth):
+    def __init__(self, obs_space, obs_dim, action_dim, action_type, policy, hidden_dim, hidden_depth, mode = 0):
         super().__init__()
         self.policy = policy
+        self.action_type = action_type
 
-        # If obs is image-like sum dimensions
-        if policy == 'CNN':
-            self.flatten=nn.Flatten()
-            obs_dim = sum(obs_dim)
+        # If obs is image-like use feature extraction
+        if self.policy =='CNN':
+            self.cnn, self.flatten = utils.cnn(obs_space, obs_dim[0], mode = mode)
+            obs_dim = self.flatten
 
-        self.Q1 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
-        self.Q2 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
+        if self.action_type == 'Cont':
+            self.Q1 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
+            self.Q2 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
+        elif self.action_type == 'Discrete':    # Calculate Q-value for every Action on discrete action spaces
+            self.Q1 = utils.mlp(obs_dim, hidden_dim, action_dim, hidden_depth)
+            self.Q2 = utils.mlp(obs_dim, hidden_dim, action_dim, hidden_depth)
 
         self.outputs = dict()
         self.apply(utils.weight_init)
@@ -26,10 +31,15 @@ class DoubleQCritic(nn.Module):
         assert obs.size(0) == action.size(0)
 
         if self.policy =='CNN':
-            obs = self.flatten(obs)
-        obs_action = torch.cat([obs, action], dim=-1)
-        q1 = self.Q1(obs_action)
-        q2 = self.Q2(obs_action)
+            obs = self.cnn(obs)
+        
+        if self.action_type == 'Cont':
+            input_data = torch.cat([obs, action], dim=-1)       # Add Action on continuous action spaces 
+        elif self.action_type == 'Discrete':
+            input_data = obs
+
+        q1 = self.Q1(input_data)
+        q2 = self.Q2(input_data)
 
         self.outputs['q1'] = q1
         self.outputs['q2'] = q2
