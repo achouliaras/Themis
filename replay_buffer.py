@@ -1,12 +1,14 @@
 import numpy as np
 import torch
 import lib.utils as utils
+from gymnasium.spaces import utils as gym_utils
 
 class ReplayBuffer(object):
     """Buffer to store environment transitions."""
-    def __init__(self, obs_shape, action_shape, action_type, capacity, device, window=1):
+    def __init__(self, obs_space, obs_shape, action_shape, action_type, capacity, device, window=1):
         self.capacity = capacity
         self.device = device
+        self.obs_space=obs_space
 
         # the proprioceptive obs is stored as float32, pixels obs as uint8
         obs_dtype = np.float32 if len(obs_shape) == 1 else np.uint8
@@ -82,7 +84,10 @@ class ReplayBuffer(object):
                 
             obses = self.obses[index*batch_size:last_index]
             actions = self.actions[index*batch_size:last_index]
-            inputs = np.concatenate([obses, actions], axis=-1)
+
+            obs_flat = np.array([gym_utils.flatten(self.obs_space, i) for i in obses])
+            
+            inputs = np.concatenate([obs_flat, actions], axis=-1)
             
             pred_reward = predictor.r_hat_batch(inputs)
             self.rewards[index*batch_size:last_index] = pred_reward

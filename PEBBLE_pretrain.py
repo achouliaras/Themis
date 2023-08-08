@@ -67,10 +67,27 @@ class Workspace(object):
             
             actor_cfg[0].action_type = self.action_type
             actor_cfg[0].policy = self.policy
-
         elif 'ALE' in cfg.domain:
             self.env, self.eval_env, self.sim_env = utils.make_atari_env(cfg, cfg.render_mode)
             self.log_success = True
+
+            self.action_type = 'Discrete'
+            self.policy = 'CNN'
+            self.mode = 2
+            self.obs_space = self.env.observation_space 
+            action_space = [1]
+            cfg.agent.obs_dim = self.env.observation_space.shape
+            cfg.agent.action_dim = int(self.env.action_space.n)
+            cfg.agent.batch_size = 256
+            cfg.agent.action_range = [0,1]
+            critic_cfg = cfg.double_q_critic,
+            actor_cfg = cfg.categorical_actor,
+        
+            critic_cfg[0].action_type = self.action_type
+            critic_cfg[0].policy = self.policy
+
+            actor_cfg[0].action_type = self.action_type
+            actor_cfg[0].policy = self.policy
         elif 'Box2D' in cfg.domain:
             self.env, self.eval_env, self.sim_env = utils.make_box2d_env(cfg, cfg.render_mode)
             self.log_success = True
@@ -125,6 +142,7 @@ class Workspace(object):
             normalize_state_entropy = True)
 
         self.replay_buffer = ReplayBuffer(
+            self.obs_space,
             self.obs_space.shape,
             action_space,
             self.action_type,
@@ -142,6 +160,7 @@ class Workspace(object):
         self.reward_model = RewardModel(
             gym_utils.flatdim(self.obs_space),
             action_space[0],
+            self.action_type,
             ensemble_size=cfg.ensemble_size,
             size_segment=cfg.segment,
             activation=cfg.activation, 
@@ -188,7 +207,7 @@ class Workspace(object):
 
             while not (terminated or truncated):
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=False, determ=False) #Must set determ=True in experiments
+                    action = self.agent.act(obs, sample=False, determ=False) # set determ=True in experiments
                     #print(action)
                 obs, reward, terminated, truncated, info = self.eval_env.step(action)
                 
@@ -272,7 +291,7 @@ class Workspace(object):
                 action = self.env.action_space.sample()
             else:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=True, determ=False)
+                    action = self.agent.act(obs, sample=True, determ=False) # set determ=True in experiments
 
             # unsupervised exploration
             if self.step > self.cfg.num_seed_steps:

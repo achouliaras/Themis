@@ -190,10 +190,11 @@ class SACAgent(Agent):
         dist = self.actor(next_obs)
         if self.action_type == 'Cont':
             next_action = dist.rsample()
+            log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
         elif self.action_type == 'Discrete':
             next_action = dist.get_actions(deterministic=True)
+            log_prob = dist.distribution.logits.sum(0, keepdim=True)
         
-        log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
         target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
         target_V = torch.min(target_Q1,
                              target_Q2) - self.alpha.detach() * log_prob
@@ -295,11 +296,12 @@ class SACAgent(Agent):
         dist = self.actor(obs)
         if self.action_type == 'Cont':
             action = dist.rsample()
+            log_prob = dist.log_prob(action).sum(-1, keepdim=True)
         elif self.action_type == 'Discrete':
             action = dist.get_actions(deterministic=True)
+            log_prob = dist.distribution.logits.sum(0, keepdim=True)
         
-        log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        actor_Q1, actor_Q2 = self.critic(obs, action)                           # FIX based on All Q-values taken
+        actor_Q1, actor_Q2 = self.critic(obs, action)
 
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()

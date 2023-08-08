@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 import lib.human_interface as ui
+from gymnasium.spaces import utils as gym_utils
 
 
 device = 'cpu'
@@ -75,14 +76,15 @@ def compute_smallest_dist(obs, full_obs):
     return total_dists.unsqueeze(1)
 
 class RewardModel:
-    def __init__(self, ds, da, 
+    def __init__(self, obs_space, ds, da, action_type,
                  ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
                  env=None, seed = 0, max_size=100, activation='tanh', capacity=5e5,  
-                 large_batch=1, label_margin=0.0, reward_scale=1.0, reward_intercept=0.0, human_teacher=False,
+                 large_batch=1, label_margin=0.0, reward_scale=1, reward_intercept=0, human_teacher=False,
                  teacher_beta=-1, teacher_gamma=1, teacher_eps_mistake=0, 
                  teacher_eps_skip=0, teacher_eps_equal=0):
         
-        # train data is trajectories, must process to sa and s..   
+        # train data is trajectories, must process to sa and s..
+        self.obs_space = obs_space
         self.ds = ds
         self.da = da
         self.de = ensemble_size
@@ -94,10 +96,14 @@ class RewardModel:
         self.max_size = max_size
         self.activation = activation
         self.size_segment = size_segment
+        self.action_type = action_type
         
+        #obs_dtype = np.float32 if len(obs_shape) == 1 else np.uint8
+        self.seg_dtype = np.float32 if action_type == 'Cont' else np.uint8
+
         self.capacity = int(capacity)
-        self.buffer_seg1 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=float)
-        self.buffer_seg2 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=float)
+        self.buffer_seg1 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=self.seg_dtype)
+        self.buffer_seg2 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=self.seg_dtype)
         self.buffer_label = np.empty((self.capacity, 1), dtype=np.float32)
         self.buffer_index = 0
         self.buffer_full = False
@@ -162,7 +168,12 @@ class RewardModel:
         self.opt = torch.optim.Adam(self.paramlst, lr = self.lr)
             
     def add_data(self, obs, act, rew, terminated, truncated):
-        sa_t = np.concatenate([obs, act], axis=-1)
+        #print(type(obs))
+        #print(obs.shape)
+        obs_flat = gym_utils.flatten(self.obs_space, obs)
+        #print(obs_flat.shape)
+        #print(act.shape)
+        sa_t = np.concatenate([obs_flat, act], axis=-1)
         r_t = rew
         
         flat_input = sa_t.reshape(1, self.da+self.ds)
@@ -311,7 +322,7 @@ class RewardModel:
     
     def get_queries(self, mb_size=20):
         input_lengths = [len(x) for x in self.inputs]       # lenght of each trajectory
-
+        
         if len(input_lengths)==1:
             len_traj = input_lengths[0]
         else:
@@ -335,14 +346,14 @@ class RewardModel:
         batch_index_2 = np.random.choice(max_len, size=mb_size, replace=True) # sample mp_size of those inputs
         sa_t_2 = [train_inputs[i] for i in batch_index_2] # mb_size x (Time x dim of s&a)
         r_t_2 = [train_targets[i] for i in batch_index_2] # mb_size x (Time x 1)
-        
+
         batch_index_1 = np.random.choice(max_len, size=mb_size, replace=True)
         sa_t_1 = [train_inputs[i] for i in batch_index_1] # mb_size x (Time x dim of s&a)
         r_t_1 = [train_targets[i] for i in batch_index_1] # mb_size x (Time x 1)
 
-        sa_t_2_padded = np.zeros((mb_size, self.size_segment, self.ds+self.da))
+        sa_t_2_padded = np.zeros((mb_size, self.size_segment, self.ds+self.da), dtype=self.seg_dtype)
         r_t_2_padded = np.zeros((mb_size, self.size_segment, 1))
-        sa_t_1_padded = np.zeros((mb_size, self.size_segment, self.ds+self.da))
+        sa_t_1_padded = np.zeros((mb_size, self.size_segment, self.ds+self.da), dtype=self.seg_dtype)
         r_t_1_padded = np.zeros((mb_size, self.size_segment, 1))
 
         # Generate time index 
@@ -609,7 +620,8 @@ class RewardModel:
     def uniform_sampling(self, first_flag=0):
         # get queries
         sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(mb_size=self.mb_size)
-            
+        
+
         # get labels
         sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(sa_t_1, sa_t_2, r_t_1, r_t_2, first_flag=first_flag)
         

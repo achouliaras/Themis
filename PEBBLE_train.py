@@ -137,8 +137,10 @@ class Workspace(object):
         
         # instantiating the reward model
         self.reward_model = RewardModel(
+            self.obs_space,
             gym_utils.flatdim(self.obs_space),
             action_space[0],
+            self.action_type,
             ensemble_size=cfg.ensemble_size,
             size_segment=cfg.segment,
             activation=cfg.activation, 
@@ -188,7 +190,8 @@ class Workspace(object):
 
             while not (terminated or truncated):
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=False)
+                    action = self.agent.act(obs, sample=False, determ=False) # set determ=True in experiments
+
                 obs, reward, terminated, truncated, info = self.eval_env.step(action)
                 
                 episode_reward += reward
@@ -320,7 +323,7 @@ class Workspace(object):
                 action = self.env.action_space.sample()
             else:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=True)
+                    action = self.agent.act(obs, sample=True, determ=False) # set determ=True in experiments
 
             # run training update (until the end)
             if self.step > (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
