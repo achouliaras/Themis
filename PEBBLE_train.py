@@ -23,6 +23,7 @@ import lib.utils as utils
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from gymnasium.spaces import utils as gym_utils
+from lib.human_interface import Xplain
 
 class Workspace(object):
     def __init__(self, cfg, work_dir):
@@ -80,10 +81,11 @@ class Workspace(object):
 
             self.action_type = 'Discrete'
             self.policy = 'CNN'
-            self.mode = 1
-            self.obs_space = self.env.observation_space['image'] 
+            self.state_type = 'pixel'
+            self.mode = 0
+            self.obs_space = self.env.observation_space#['image'] 
             action_space = [1]                                                # or 7?
-            cfg.agent.obs_dim = self.env.observation_space['image'].shape
+            cfg.agent.obs_dim = self.env.observation_space.shape #['image'].shape
             cfg.agent.action_dim = int(self.env.action_space.n)
             cfg.agent.batch_size = 256
             cfg.agent.action_range = [0,1]
@@ -129,6 +131,8 @@ class Workspace(object):
         
         self.agent.load(snapshot_dir, self.global_frame)
         
+        ui_module= Xplain(self.agent, self.action_type)
+
         # for logging
         self.start_step=self.step
         self.total_feedback = 0
@@ -137,22 +141,25 @@ class Workspace(object):
         
         # instantiating the reward model
         self.reward_model = RewardModel(
-            self.obs_space,
-            gym_utils.flatdim(self.obs_space),
-            action_space[0],
-            self.action_type,
+            obs_space=self.obs_space,
+            ds=gym_utils.flatdim(self.obs_space),
+            da=action_space[0],
+            action_type=self.action_type,
             ensemble_size=cfg.ensemble_size,
             size_segment=cfg.segment,
+            env = self.sim_env,
             activation=cfg.activation, 
             lr=cfg.reward_lr,
             mb_size=cfg.reward_batch, 
             large_batch=cfg.large_batch, 
-            label_margin=cfg.label_margin, 
+            label_margin=cfg.label_margin,
+            human_teacher = cfg.human_teacher, 
             teacher_beta=cfg.teacher_beta, 
             teacher_gamma=cfg.teacher_gamma, 
             teacher_eps_mistake=cfg.teacher_eps_mistake, 
             teacher_eps_skip=cfg.teacher_eps_skip, 
-            teacher_eps_equal=cfg.teacher_eps_equal)
+            teacher_eps_equal=cfg.teacher_eps_equal,
+            ui_module=ui_module)
         
         self.reward_model.load(snapshot_dir, self.global_frame)
         
@@ -178,7 +185,7 @@ class Workspace(object):
         
         for episode in range(self.cfg.num_eval_episodes):
             obs, info = self.eval_env.reset(seed = self.cfg.seed)
-            if self.action_type == 'Discrete':
+            if self.action_type == 'Discrete' and  self.state_type == 'grid':
                 obs = obs['image']
             self.agent.reset()
             terminated = False
@@ -198,7 +205,7 @@ class Workspace(object):
                 true_episode_reward += reward
                 if self.log_success:
                     episode_success = max(episode_success, terminated)
-                if self.action_type == 'Discrete':
+                if self.action_type == 'Discrete' and  self.state_type == 'grid':
                     obs = obs['image']
                 
             average_episode_reward += episode_reward
@@ -302,7 +309,7 @@ class Workspace(object):
                 
                 obs, info = self.env.reset(seed = self.cfg.seed)
 
-                if self.action_type == 'Discrete':
+                if self.action_type == 'Discrete' and  self.state_type == 'grid':
                     obs = obs['image']
 
                 self.agent.reset()
@@ -395,7 +402,7 @@ class Workspace(object):
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
             if self.action_type == 'Discrete':
-                next_obs = next_obs['image']
+                next_obs = next_obs['image'] if self.state_type == 'grid' else next_obs
                 action = np.array([action], dtype=np.uint8)
             
             obs_flat = gym_utils.flatten(self.obs_space,obs)
@@ -433,7 +440,8 @@ class Workspace(object):
 def main(cfg : DictConfig):
     work_dir = Path.cwd()
     cfg.snapshot_dir = work_dir / cfg.snapshot_dir
-    snapshot = cfg.snapshot_dir / f'snapshot_{cfg.num_seed_steps + cfg.num_unsup_steps}.pt'
+    snapshot = cfg.snapshot_dir / f'snapshot_{(cfg.num_seed_steps + cfg.num_unsup_steps)*cfg.action_repeat}.pt'
+    
     if not snapshot.exists():
         print(f"Snapshot doesn't exist at {cfg.snapshot_dir}")
         print('Execute the pretraining phase first')

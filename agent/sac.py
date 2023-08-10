@@ -20,17 +20,14 @@ def compute_state_entropy(obs, full_obs, k, action_type):
             if action_type == 'Cont':
                 dist = torch.norm(obs[:, None, :] - full_obs[None, start:end, :], dim=-1, p=2)
             else:
-                dist = torch.norm(obs[:, None, :] - full_obs[None, start:end, :], dim=(-1,-2), p=2)
+                dist = torch.norm(obs[:, None, :] - full_obs[None, start:end, :], dim=(-1,-2,-3), p=2)
             dists.append(dist)
 
         dists = torch.cat(dists, dim=1)
         knn_dists = torch.kthvalue(dists, k=k + 1, dim=1).values
         state_entropy = knn_dists
 
-    if action_type == 'Cont':
-        return state_entropy.unsqueeze(1)
-    else: 
-        return state_entropy
+    return state_entropy.unsqueeze(1)
 
 class SACAgent(Agent):
     """SAC algorithm."""
@@ -188,6 +185,7 @@ class SACAgent(Agent):
                       not_done, logger, step, print_flag=True):
         
         dist = self.actor(next_obs)
+        #print('Here')
         if self.action_type == 'Cont':
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
@@ -380,9 +378,11 @@ class SACAgent(Agent):
                 obs, full_obs, action, next_obs, not_done_no_max,
                 logger, step, K=K, print_flag=print_flag)
 
+            #print('Here 2')
             if step % self.actor_update_frequency == 0:
                 self.update_actor_and_alpha(obs, logger, step, print_flag)
 
+        #print('Here 3')
         if step % self.critic_target_update_frequency == 0:
             utils.soft_update_params(self.critic, self.critic_target,
                                      self.critic_tau)

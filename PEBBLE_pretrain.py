@@ -72,11 +72,14 @@ class Workspace(object):
             self.log_success = True
 
             self.action_type = 'Discrete'
+            self.state_type = 'pixels'
             self.policy = 'CNN'
-            self.mode = 2
+            self.mode = 0
             self.obs_space = self.env.observation_space 
+            
             action_space = [1]
             cfg.agent.obs_dim = self.env.observation_space.shape
+            
             cfg.agent.action_dim = int(self.env.action_space.n)
             cfg.agent.batch_size = 256
             cfg.agent.action_range = [0,1]
@@ -96,11 +99,14 @@ class Workspace(object):
             self.log_success = True
 
             self.action_type = 'Discrete'
+            self.state_type = 'pixel'
             self.policy = 'CNN'
-            self.mode = 1
-            self.obs_space = self.env.observation_space['image'] 
+            self.mode = 0
+            self.obs_space = self.env.observation_space#['image'] 
             action_space = [1]                                                # or 7?
-            cfg.agent.obs_dim = self.env.observation_space['image'].shape
+            cfg.agent.obs_dim = self.env.observation_space.shape #['image'].shape
+            #print(self.env.observation_space)
+            #print(self.env.action_space)
             cfg.agent.action_dim = int(self.env.action_space.n)
             cfg.agent.batch_size = 256
             cfg.agent.action_range = [0,1]
@@ -112,7 +118,6 @@ class Workspace(object):
 
             actor_cfg[0].action_type = self.action_type
             actor_cfg[0].policy = self.policy
-
         else:
             raise NotImplementedError
         
@@ -158,6 +163,7 @@ class Workspace(object):
         
         # instantiating the reward model
         self.reward_model = RewardModel(
+            self.obs_space,
             gym_utils.flatdim(self.obs_space),
             action_space[0],
             self.action_type,
@@ -195,7 +201,7 @@ class Workspace(object):
         
         for episode in range(self.cfg.num_eval_episodes):
             obs, info = self.eval_env.reset(seed = self.cfg.seed)
-            if self.action_type == 'Discrete':
+            if self.action_type == 'Discrete' and self.state_type == 'grid':
                 obs = obs['image']
             self.agent.reset()
             terminated = False
@@ -215,8 +221,8 @@ class Workspace(object):
                 true_episode_reward += reward
                 if self.log_success:
                     episode_success = max(episode_success, terminated)
-                if self.action_type == 'Discrete':
-                    obs = obs['image']  
+                if self.action_type == 'Discrete' and self.state_type == 'grid':
+                    obs = obs['image']
                 
             average_episode_reward += episode_reward
             average_true_episode_reward += true_episode_reward
@@ -269,8 +275,9 @@ class Workspace(object):
                     self.logger.log('train/true_episode_success', episode_success, self.step)
                 
                 obs, info = self.env.reset(seed = self.cfg.seed)
+                
 
-                if self.action_type == 'Discrete':
+                if self.action_type == 'Discrete' and self.state_type == 'grid':
                     obs = obs['image']
 
                 self.agent.reset()
@@ -296,14 +303,15 @@ class Workspace(object):
             # unsupervised exploration
             if self.step > self.cfg.num_seed_steps:
                 self.agent.update_state_ent(self.replay_buffer, self.logger, self.step, gradient_update=1, K=self.cfg.topK)
+                #print('OK')
                 
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
             if self.action_type == 'Discrete':
-                next_obs = next_obs['image']
+                next_obs = next_obs['image'] if self.state_type == 'grid' else next_obs
                 action = np.array([action], dtype=np.uint8)
 
-            obs_flat = gym_utils.flatten(self.obs_space,obs)
+            obs_flat = gym_utils.flatten(self.obs_space, obs)
 
             reward_hat = self.reward_model.r_hat(np.concatenate([obs_flat, action], axis=-1))
 
@@ -323,6 +331,7 @@ class Workspace(object):
             episode_step += 1
             self.step += 1
             interact_count += 1
+            
 
         # evaluate agent at the end
         self.logger.log('eval/episode', self.episode, self.step)

@@ -8,7 +8,10 @@ import math
 
 from collections import deque
 from gymnasium.wrappers.time_limit import TimeLimit
+from gymnasium.wrappers import NormalizeObservation, ResizeObservation
+from minigrid.wrappers import RGBImgObsWrapper, ImgObsWrapper
 from rlkit.envs.wrappers import NormalizedBoxEnv
+
 from stable_baselines3.common.env_util import make_atari_env as sb3env
 from skimage.util.shape import view_as_windows
 from torch import nn
@@ -52,14 +55,40 @@ def make_minigrid_env(cfg, render_mode=None):
     #Helper function to create MiniGrid environment
     id=cfg.domain+'-'+cfg.env
     env = gym.make(id=id, render_mode=None)
-    env = TimeLimit(env, env.max_steps)
+    env = TimeLimit(
+            NormalizeObservation(
+                ResizeObservation(
+                    ImgObsWrapper(
+                        RGBImgObsWrapper(env)
+                    ),64
+                )
+            ), 
+             max_episode_steps = 200)
 
     eval_env =  gym.make(id=id, render_mode=render_mode)   
-    eval_env = TimeLimit(eval_env, eval_env.max_steps)
+    eval_env = TimeLimit(
+                NormalizeObservation(
+                    ResizeObservation(
+                        ImgObsWrapper(
+                            RGBImgObsWrapper(eval_env)
+                        ),64
+                    )
+                ), 
+                max_episode_steps = 200)
 
     if cfg.human_teacher:
         sim_env = gym.make(id=id, render_mode='rgb_array')
-        sim_env = TimeLimit(RewindWrapper(sim_env), sim_env.max_steps)    
+        sim_env = TimeLimit(
+                    RewindWrapper(
+                        NormalizeObservation(
+                            ResizeObservation(
+                                ImgObsWrapper(
+                                    RGBImgObsWrapper(sim_env)
+                                ),64
+                            )
+                        )
+                    ), 
+                    max_episode_steps = 200)    
         
     return env, eval_env, sim_env
 
@@ -76,8 +105,8 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode=None)
-    print(env.action_space) # Remove normalise probably
-    env = TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps)
+    #print(env.action_space) # Remove normalise probably
+    #env = TimeLimit(env, max_episode_steps= env.spec.max_episode_steps) # Not working properly
 
     eval_env =  gym.make(id=id, 
                         mode=cfg.mode, 
@@ -87,7 +116,7 @@ def make_atari_env(cfg, render_mode=None):
                         repeat_action_probability=cfg.repeat_action_probability,
                         full_action_space=cfg.full_action_space,
                         render_mode = render_mode)
-    eval_env = TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
+    #eval_env = TimeLimit(eval_env, max_episode_steps= eval_env.spec.max_episode_steps) # Not working properly
     
     if cfg.human_teacher:
         sim_env = gym.make(id=id, 
@@ -98,7 +127,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode='rgb_array')
-        sim_env = TimeLimit(RewindWrapper(NormalizedBoxEnv(sim_env)), sim_env._max_episode_steps)
+        s#im_env = TimeLimit(RewindWrapper(sim_env), max_episode_steps= sim_env.spec.max_episode_steps) # Not working properly
 
     return env, eval_env, sim_env
 
@@ -258,9 +287,9 @@ def update_mean_var_count_from_moments(
 
 def cnn(obs_space, n_input_channels, mode=0):
 
-    kernel_size = [[8,4,3],[2,2,2]] # Parameterisation
+    kernel_size = [[8,4,3],[3,3,3]] # Parameterisation
     stride = [[4,2,1],[1,1,1]]
-    padding =[[0,0,0],[0,0,1]]
+    padding =[[0,0,0],[0,0,0]]
 
     kernel_size=kernel_size[mode]
     stride = stride[mode]
@@ -278,9 +307,11 @@ def cnn(obs_space, n_input_channels, mode=0):
     
     # Compute shape by doing one forward pass
     with torch.no_grad():
-        #print(feature_extractor(torch.as_tensor(obs_space.sample()[None]).float()).shape)
-        n_flatten = feature_extractor(torch.as_tensor(obs_space.sample()[None]).float()).shape[1]
+        obs_sample = torch.as_tensor(obs_space.sample()[None]).permute(0, 3, 1, 2)
+        n_flatten = feature_extractor(obs_sample.float()).shape[1]
     
+    #feature_extractor
+
     return feature_extractor, n_flatten
 
 def mlp(input_dim, hidden_dim, output_dim, hidden_depth, output_mod=None):

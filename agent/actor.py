@@ -101,10 +101,10 @@ class CategoricalActor(nn.Module):
         self.policy = policy
         self.log_std_bounds = log_std_bounds
         self.categorical = CategoricalDistribution(action_dim)
-
+        
         #print(obs_space.shape[0]) # Needs reshape to 3,7,7
         if policy =='CNN':
-            self.cnn, self.flatten = utils.cnn(obs_space, obs_dim[0], mode=mode)
+            self.cnn, self.flatten = utils.cnn(obs_space, obs_dim[2], mode=mode)
             obs_dim = self.flatten
             
         self.trunk = utils.mlp(obs_dim, hidden_dim, action_dim, hidden_depth)
@@ -114,11 +114,12 @@ class CategoricalActor(nn.Module):
 
     def forward(self, obs):
         if self.policy =='CNN':
-            x = self.trunk(self.cnn(obs))
+            x = self.trunk(self.cnn(obs.permute(0, 3, 1, 2)))
         else:
             x = self.trunk(obs)
     
         dist = F.softmax(x, dim=1)
+
         return self.categorical.proba_distribution(action_logits=dist)
 
     def log(self, logger, step):

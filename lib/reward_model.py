@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time
-import lib.human_interface as ui
+#import lib.human_interface as ui
 from gymnasium.spaces import utils as gym_utils
 
 
@@ -81,7 +81,7 @@ class RewardModel:
                  env=None, seed = 0, max_size=100, activation='tanh', capacity=5e5,  
                  large_batch=1, label_margin=0.0, reward_scale=1, reward_intercept=0, human_teacher=False,
                  teacher_beta=-1, teacher_gamma=1, teacher_eps_mistake=0, 
-                 teacher_eps_skip=0, teacher_eps_equal=0):
+                 teacher_eps_skip=0, teacher_eps_equal=0, ui_module = None):
         
         # train data is trajectories, must process to sa and s..
         self.obs_space = obs_space
@@ -99,7 +99,8 @@ class RewardModel:
         self.action_type = action_type
         
         #obs_dtype = np.float32 if len(obs_shape) == 1 else np.uint8
-        self.seg_dtype = np.float32 if action_type == 'Cont' else np.uint8
+        #self.seg_dtype = np.float32 if action_type == 'Cont' else np.uint8
+        self.seg_dtype = np.float32
 
         self.capacity = int(capacity)
         self.buffer_seg1 = np.empty((self.capacity, size_segment, self.ds+self.da), dtype=self.seg_dtype)
@@ -140,6 +141,8 @@ class RewardModel:
         self.label_target = 1 - 2*self.label_margin
         self.reward_scale = reward_scale
         self.reward_intercept = reward_intercept
+
+        self.ui_module = ui_module
     
     def softXEnt_loss(self, input, target):
         logprobs = torch.nn.functional.log_softmax (input, dim = 1)
@@ -172,6 +175,8 @@ class RewardModel:
         #print(obs.shape)
         obs_flat = gym_utils.flatten(self.obs_space, obs)
         #print(obs_flat.shape)
+        if act is np.uint8:
+            act = np.float32(act)
         #print(act.shape)
         sa_t = np.concatenate([obs_flat, act], axis=-1)
         r_t = rew
@@ -323,6 +328,8 @@ class RewardModel:
     def get_queries(self, mb_size=20):
         input_lengths = [len(x) for x in self.inputs]       # lenght of each trajectory
         
+        print(input_lengths)
+
         if len(input_lengths)==1:
             len_traj = input_lengths[0]
         else:
@@ -432,19 +439,19 @@ class RewardModel:
         if self.human_teacher:
             #print(sa_t_1.shape[0])
             #print(self.env.observation_space.shape[0])
-
-            clips1 = ui.generate_frames(sa_t_1, self.env, self.seed)
-            clips2 = ui.generate_frames(sa_t_2, self.env, self.seed)
             
-            ui.generate_merged_clip(clips1, clips2, 'TestMergedClips', 'mp4')
-            #ui.generate_paired_clips(clips1, clips2, 'TestPairClip', 'mp4')
+            clips1, xclips1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, self.obs_space)
+            clips2, xclips2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, self.obs_space)
+            
+            self.ui_module.generate_merged_clip(clips1, xclips1, clips2, xclips2, 'TestMergedClips', 'mp4')
+            #self.ui_module.generate_paired_clips(clips1, clips2, 'TestPairClip', 'mp4')
 
             # Get human input
             labels =[]
-            labels = ui.get_input_keyboad(self.mb_size)
-            print(len(labels))
+            labels = self.ui_module.get_input_keyboad(self.mb_size)
             if len(labels) == 0:
                 return None, None, None, None, []
+            labels = np.array(labels).reshape(-1,1)
         else:
             # skip the query
             if self.teacher_thres_skip > 0: 

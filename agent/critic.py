@@ -14,7 +14,7 @@ class DoubleQCritic(nn.Module):
 
         # If obs is image-like use feature extraction
         if self.policy =='CNN':
-            self.cnn, self.flatten = utils.cnn(obs_space, obs_dim[0], mode = mode)
+            self.cnn, self.flatten = utils.cnn(obs_space, obs_dim[2], mode = mode)
             obs_dim = self.flatten
 
         if self.action_type == 'Cont':
@@ -31,7 +31,7 @@ class DoubleQCritic(nn.Module):
         assert obs.size(0) == action.size(0)
 
         if self.policy =='CNN':
-            obs = self.cnn(obs)
+            obs = self.cnn(obs.permute(0, 3, 1, 2))
         
         if self.action_type == 'Cont':
             input_data = torch.cat([obs, action], dim=-1)       # Add Action on continuous action spaces 
