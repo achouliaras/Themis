@@ -9,7 +9,7 @@ import math
 from collections import deque
 from gymnasium.wrappers.time_limit import TimeLimit
 from gymnasium.wrappers import NormalizeObservation, ResizeObservation
-from minigrid.wrappers import RGBImgObsWrapper, ImgObsWrapper
+from minigrid.wrappers import RGBImgObsWrapper, ImgObsWrapper, FullyObsWrapper
 from rlkit.envs.wrappers import NormalizedBoxEnv
 
 from stable_baselines3.common.env_util import make_atari_env as sb3env
@@ -59,22 +59,22 @@ def make_minigrid_env(cfg, render_mode=None):
             NormalizeObservation(
                 ResizeObservation(
                     ImgObsWrapper(
-                        RGBImgObsWrapper(env)
+                        RGBImgObsWrapper(FullyObsWrapper(env))
                     ),64
                 )
             ), 
-             max_episode_steps = 200)
+             max_episode_steps = 1000)
 
     eval_env =  gym.make(id=id, render_mode=render_mode)   
     eval_env = TimeLimit(
                 NormalizeObservation(
                     ResizeObservation(
                         ImgObsWrapper(
-                            RGBImgObsWrapper(eval_env)
+                            RGBImgObsWrapper(FullyObsWrapper(eval_env))
                         ),64
                     )
                 ), 
-                max_episode_steps = 200)
+                max_episode_steps = 1000)
 
     if cfg.human_teacher:
         sim_env = gym.make(id=id, render_mode='rgb_array')
@@ -83,12 +83,12 @@ def make_minigrid_env(cfg, render_mode=None):
                         NormalizeObservation(
                             ResizeObservation(
                                 ImgObsWrapper(
-                                    RGBImgObsWrapper(sim_env)
+                                    RGBImgObsWrapper(FullyObsWrapper(sim_env))
                                 ),64
                             )
                         )
                     ), 
-                    max_episode_steps = 200)    
+                    max_episode_steps = 1000)    
         
     return env, eval_env, sim_env
 

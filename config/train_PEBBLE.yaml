@@ -9,7 +9,7 @@ experiment: PEBBLE
 segment: 50
 activation: leaky_relu
 num_seed_steps: 1000 #1000
-num_unsup_steps: 1000 #5000
+num_unsup_steps: 5000 #5000
 num_interact: 5000
 reward_lr: 0.0003
 reward_batch: 128
@@ -33,7 +33,7 @@ teacher_eps_equal: 0    # Probability of considering both segments equally good
 # scheduling
 reward_schedule: 0
 
-num_train_steps: 1e6
+num_train_steps: 1000000
 replay_buffer_capacity: ${num_train_steps}
 
 # evaluation config

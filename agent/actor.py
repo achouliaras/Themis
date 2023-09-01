@@ -112,13 +112,18 @@ class CategoricalActor(nn.Module):
         self.outputs = dict()
         self.apply(utils.weight_init)
 
-    def forward(self, obs):
+    def forward(self, obs, xplain = False):
         if self.policy =='CNN':
+            #print('Obs= ', obs.dtype)
             x = self.trunk(self.cnn(obs.permute(0, 3, 1, 2)))
         else:
             x = self.trunk(obs)
     
         dist = F.softmax(x, dim=1)
+
+        if xplain:
+            #print('Dist= ', dist.dtype)
+            return dist
 
         return self.categorical.proba_distribution(action_logits=dist)
 

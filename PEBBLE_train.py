@@ -83,7 +83,7 @@ class Workspace(object):
             self.policy = 'CNN'
             self.state_type = 'pixel'
             self.mode = 0
-            self.obs_space = self.env.observation_space#['image'] 
+            self.obs_space = self.env.observation_space#['image']
             action_space = [1]                                                # or 7?
             cfg.agent.obs_dim = self.env.observation_space.shape #['image'].shape
             cfg.agent.action_dim = int(self.env.action_space.n)
@@ -258,7 +258,7 @@ class Workspace(object):
         if self.labeled_feedback > 0:
             # update reward
             for epoch in range(self.cfg.reward_update):
-                if self.cfg.label_margin > 0 or self.cfg.teacher_eps_equal > 0:
+                if self.cfg.label_margin > 0 or self.cfg.teacher_eps_equal > 0 or self.cfg.human_teacher == True:
                     train_acc = self.reward_model.train_soft_reward()
                 else:
                     train_acc = self.reward_model.train_reward()
@@ -309,6 +309,7 @@ class Workspace(object):
                 
                 obs, info = self.env.reset(seed = self.cfg.seed)
 
+                #print(obs[0,0,0].dtype)
                 if self.action_type == 'Discrete' and  self.state_type == 'grid':
                     obs = obs['image']
 

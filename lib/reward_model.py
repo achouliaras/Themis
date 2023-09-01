@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time
+import copy
 #import lib.human_interface as ui
 from gymnasium.spaces import utils as gym_utils
 
@@ -328,7 +329,7 @@ class RewardModel:
     def get_queries(self, mb_size=20):
         input_lengths = [len(x) for x in self.inputs]       # lenght of each trajectory
         
-        print(input_lengths)
+        #print(input_lengths)
 
         if len(input_lengths)==1:
             len_traj = input_lengths[0]
@@ -365,9 +366,9 @@ class RewardModel:
 
         # Generate time index 
         time_index = np.array([list(range(size_segment)) for i in range(mb_size)])
-        time_index_2, time_index_1 = np.zeros((2, mb_size, size_segment),dtype=int)
+        time_index_2, time_index_1 = np.zeros((2, mb_size, size_segment), dtype=int)
 
-        print('Segment is: ', size_segment)
+        #print('Segment is: ', size_segment)
         for i in range(mb_size):
             duration2 =len(sa_t_2[i])
             duration1 =len(sa_t_1[i])
@@ -440,11 +441,13 @@ class RewardModel:
             #print(sa_t_1.shape[0])
             #print(self.env.observation_space.shape[0])
             
-            clips1, xclips1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, self.obs_space)
-            clips2, xclips2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, self.obs_space)
+            #print('Get Label ',sa_t_1[0].dtype)
             
-            self.ui_module.generate_merged_clip(clips1, xclips1, clips2, xclips2, 'TestMergedClips', 'mp4')
-            #self.ui_module.generate_paired_clips(clips1, clips2, 'TestPairClip', 'mp4')
+            clips1, xclips1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, copy.deepcopy(self.obs_space))
+            clips2, xclips2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, copy.deepcopy(self.obs_space))
+            
+            #self.ui_module.generate_merged_clip(clips1, xclips1, clips2, xclips2, 'TestMergedClips', 'mp4')
+            self.ui_module.generate_paired_clips(clips1, xclips1, clips2, xclips2, 'TestPairClip', 'mp4')
 
             # Get human input
             labels =[]
@@ -452,6 +455,8 @@ class RewardModel:
             if len(labels) == 0:
                 return None, None, None, None, []
             labels = np.array(labels).reshape(-1,1)
+            print(labels)
+
         else:
             # skip the query
             if self.teacher_thres_skip > 0: 
@@ -715,17 +720,19 @@ class RewardModel:
                 # get logits
                 r_hat1 = self.r_hat_member(sa_t_1, member=member)
                 r_hat2 = self.r_hat_member(sa_t_2, member=member)
-                r_hat1 = r_hat1.sum(axis=1)
-                r_hat2 = r_hat2.sum(axis=1)
+                r_hat1 = r_hat1.sum(axis=1) #*self.reward_scale+self.reward_intercept
+                r_hat2 = r_hat2.sum(axis=1) #*self.reward_scale+self.reward_intercept
                 r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
 
                 # compute loss
-                curr_loss = self.CEloss(r_hat, labels*self.reward_scale+self.reward_intercept)      #Reward Shape
+                curr_loss = self.CEloss(r_hat, labels)
+                #curr_loss = self.CEloss(r_hat, labels *self.reward_scale+self.reward_intercept)      #Reward Shape
                 loss += curr_loss
                 ensemble_losses[member].append(curr_loss.item())
                 
                 # compute acc
-                _, predicted = torch.max(r_hat.data, 1*self.reward_scale+self.reward_intercept)     #Reward Shape
+                _, predicted = torch.max(r_hat.data, 1)
+                #_, predicted = torch.max(r_hat.data, 1 * self.reward_scale+self.reward_intercept)     #Reward Shape
                 correct = (predicted == labels).sum().item()
                 ensemble_acc[member] += correct
                 
@@ -772,22 +779,27 @@ class RewardModel:
                 # get logits
                 r_hat1 = self.r_hat_member(sa_t_1, member=member)
                 r_hat2 = self.r_hat_member(sa_t_2, member=member)
-                r_hat1 = r_hat1.sum(axis=1)
-                r_hat2 = r_hat2.sum(axis=1)
+                r_hat1 = r_hat1.sum(axis=1) *self.reward_scale+self.reward_intercept
+                r_hat2 = r_hat2.sum(axis=1) *self.reward_scale+self.reward_intercept
                 r_hat = torch.cat([r_hat1, r_hat2], axis=-1)
 
                 # compute loss
                 uniform_index = labels == -1
                 labels[uniform_index] = 0
+                #target_onehot = torch.zeros_like(r_hat).scatter(1, labels.unsqueeze(1), self.label_target)
                 target_onehot = torch.zeros_like(r_hat).scatter(1, labels.unsqueeze(1), self.label_target*self.reward_scale+self.reward_intercept)  #Reward Shape
                 target_onehot += self.label_margin
                 if sum(uniform_index) > 0:
+                    #target_onehot[uniform_index] = 0.5
                     target_onehot[uniform_index] = 0.5*self.reward_scale+self.reward_intercept      #Reward Shape
+
+                print(target_onehot)
                 curr_loss = self.softXEnt_loss(r_hat, target_onehot)
                 loss += curr_loss
                 ensemble_losses[member].append(curr_loss.item())
                 
                 # compute acc
+                #_, predicted = torch.max(r_hat.data, 1)
                 _, predicted = torch.max(r_hat.data, 1*self.reward_scale+self.reward_intercept)     #Reward Shape
                 correct = (predicted == labels).sum().item()
                 ensemble_acc[member] += correct
