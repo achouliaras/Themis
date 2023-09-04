@@ -39,7 +39,7 @@ replay_buffer_capacity: ${num_train_steps}
 # evaluation config
 eval_frequency: 50 #10000
 num_eval_episodes: 10
-device: cpu
+device: mps
 
 # logger
 log_frequency: 10000

@@ -153,6 +153,8 @@ class Workspace(object):
             mb_size=cfg.reward_batch, 
             large_batch=cfg.large_batch, 
             label_margin=cfg.label_margin,
+            reward_scale=cfg.reward_scale, 
+            reward_intercept=cfg.reward_intercept,
             human_teacher = cfg.human_teacher, 
             teacher_beta=cfg.teacher_beta, 
             teacher_gamma=cfg.teacher_gamma, 

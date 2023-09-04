@@ -3,7 +3,6 @@ from gymnasium.spaces import Box
 
 from rlkit.envs.proxy_env import ProxyEnv
 
-
 class NormalizedBoxEnv(ProxyEnv):
     """
     Normalize action to in [-1, 1].

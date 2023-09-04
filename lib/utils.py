@@ -10,10 +10,10 @@ from collections import deque
 from gymnasium.wrappers.time_limit import TimeLimit
 from gymnasium.wrappers import NormalizeObservation, ResizeObservation
 from minigrid.wrappers import RGBImgObsWrapper, ImgObsWrapper, FullyObsWrapper
-from rlkit.envs.wrappers import NormalizedBoxEnv
+from rlkit.envs.wrappers import NormalizedBoxEnv, NormalizePixelObs
 
-from stable_baselines3.common.env_util import make_atari_env as sb3env
-from skimage.util.shape import view_as_windows
+#from stable_baselines3.common.env_util import make_atari_env as sb3env
+#from skimage.util.shape import view_as_windows
 from torch import nn
 from torch import distributions as pyd
     
@@ -56,23 +56,29 @@ def make_minigrid_env(cfg, render_mode=None):
     id=cfg.domain+'-'+cfg.env
     env = gym.make(id=id, render_mode=None)
     env = TimeLimit(
-            NormalizeObservation(
+            NormalizePixelObs(
                 ResizeObservation(
                     ImgObsWrapper(
                         RGBImgObsWrapper(FullyObsWrapper(env))
-                    ),64
-                )
+                    ),
+                    64
+                ),
+                reward_scale = cfg.reward_scale,
+                reward_intercept = cfg.reward_intercept
             ), 
              max_episode_steps = 1000)
 
     eval_env =  gym.make(id=id, render_mode=render_mode)   
     eval_env = TimeLimit(
-                NormalizeObservation(
+                NormalizePixelObs(
                     ResizeObservation(
                         ImgObsWrapper(
                             RGBImgObsWrapper(FullyObsWrapper(eval_env))
-                        ),64
-                    )
+                        ),
+                        64
+                    ),
+                    reward_scale = cfg.reward_scale,
+                    reward_intercept = cfg.reward_intercept
                 ), 
                 max_episode_steps = 1000)
 
@@ -80,12 +86,15 @@ def make_minigrid_env(cfg, render_mode=None):
         sim_env = gym.make(id=id, render_mode='rgb_array')
         sim_env = TimeLimit(
                     RewindWrapper(
-                        NormalizeObservation(
+                        NormalizePixelObs(
                             ResizeObservation(
                                 ImgObsWrapper(
                                     RGBImgObsWrapper(FullyObsWrapper(sim_env))
-                                ),64
-                            )
+                                ),
+                                64
+                            ),
+                            reward_scale = cfg.reward_scale,
+                            reward_intercept = cfg.reward_intercept
                         )
                     ), 
                     max_episode_steps = 1000)    

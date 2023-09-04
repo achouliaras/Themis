@@ -356,7 +356,7 @@ def main(cfg : DictConfig):
     if snapshot.exists():
         print(f'Snapshot seems to already exist at {cfg.snapshot_dir}')
         print('Do you want to overwrite it?\n')
-        answer = input('[y]/n')
+        answer = input('[y]/n \n')
         if answer in ['n','no','No']: exit()
     workspace.run()
     if snapshot.exists():

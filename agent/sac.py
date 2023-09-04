@@ -11,7 +11,7 @@ from agent.critic import DoubleQCritic
 from agent.actor import DiagGaussianActor, CategoricalActor
 
 def compute_state_entropy(obs, full_obs, k, action_type):
-    batch_size = 500
+    batch_size = 100
     with torch.no_grad():
         dists = []
         for idx in range(len(full_obs) // batch_size + 1):
@@ -20,6 +20,8 @@ def compute_state_entropy(obs, full_obs, k, action_type):
             if action_type == 'Cont':
                 dist = torch.norm(obs[:, None, :] - full_obs[None, start:end, :], dim=-1, p=2)
             else:
+                #print(full_obs[None, start:end, :].shape)
+                #print(obs[:, None, :].shape)
                 dist = torch.norm(obs[:, None, :] - full_obs[None, start:end, :], dim=(-1,-2,-3), p=2)
             dists.append(dist)
 
@@ -74,7 +76,7 @@ class SACAgent(Agent):
         #self.actor = hydra.utils.instantiate(actor_cfg, _convert_="all").to(self.device)
         self.actor = self.create_actor()
         
-        self.log_alpha = torch.tensor(np.log(init_temperature)).to(self.device)
+        self.log_alpha = torch.tensor(np.log(init_temperature), dtype=torch.float32).to(self.device)
         self.log_alpha.requires_grad = True
         
         # set target entropy to -|A|
