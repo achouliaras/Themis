@@ -15,7 +15,7 @@ import copy
 
 from lib.logger import Logger
 from agent.sac import SACAgent
-from replay_buffer import ReplayBuffer
+from lib.replay_buffer import ReplayBuffer
 from lib.reward_model import RewardModel
 from collections import deque
 

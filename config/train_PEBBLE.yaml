@@ -39,7 +39,7 @@ replay_buffer_capacity: ${num_train_steps}
 # evaluation config
 eval_frequency: 50 #10000
 num_eval_episodes: 10
-device: mps
+device: cpu
 
 # logger
 log_frequency: 10000
@@ -50,6 +50,7 @@ save_video: false
 
 # setups
 seed: 1
+debug: False
 
 # Environment
 domain: Control

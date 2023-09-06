@@ -7,7 +7,6 @@ import copy
 #import lib.human_interface as ui
 from gymnasium.spaces import utils as gym_utils
 
-
 device = 'cpu'
 
 def gen_net(in_size=1, out_size=1, H=128, n_layers=3, activation='tanh'):
@@ -437,17 +436,22 @@ class RewardModel:
         sum_r_t_1 = np.sum(r_t_1, axis=1)
         sum_r_t_2 = np.sum(r_t_2, axis=1)
 
+        clips1, xclips1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, copy.deepcopy(self.obs_space))
+        clips2, xclips2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, copy.deepcopy(self.obs_space))
+        
+        self.ui_module.generate_paired_clips(clips1, xclips1, clips2, xclips2, 'TestPairClip', 'mp4')
+        
         if self.human_teacher:
             #print(sa_t_1.shape[0])
             #print(self.env.observation_space.shape[0])
             
             #print('Get Label ',sa_t_1[0].dtype)
             
-            clips1, xclips1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, copy.deepcopy(self.obs_space))
-            clips2, xclips2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, copy.deepcopy(self.obs_space))
+            ###clips1, xclips1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, copy.deepcopy(self.obs_space))
+            ###clips2, xclips2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, copy.deepcopy(self.obs_space))
             
             #self.ui_module.generate_merged_clip(clips1, xclips1, clips2, xclips2, 'TestMergedClips', 'mp4')
-            self.ui_module.generate_paired_clips(clips1, xclips1, clips2, xclips2, 'TestPairClip', 'mp4')
+            ###self.ui_module.generate_paired_clips(clips1, xclips1, clips2, xclips2, 'TestPairClip', 'mp4')
 
             # Get human input
             labels =[]

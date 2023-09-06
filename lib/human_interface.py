@@ -175,6 +175,7 @@ class Xplain:
 
         #multiclip.write_videofile(clipname)
         multiclip.write_videofile(str(p)+'/'+clipname +'.' + format, threads=4, logger = None)
+        multiclip.close()
 
         i=[os.remove(p / f'TESTclip1_{i}.mp4') for i, clip1 in enumerate(frames1)]
         i=[os.remove(p / f'TESTxclip1_{i}.mp4') for i, clip1 in enumerate(xframes1)]
@@ -224,10 +225,12 @@ class Xplain:
             for i, clips in enumerate(zip(clip_combo, xclip_combo)):
                 multiclip = clips_array([clips[0],clips[1]])
                 multiclip.write_videofile(str(p)+'/'+clipname + '_' + str(i+1) +'.' + format, threads=4, logger = None)
+                multiclip.close()
         else:
             for i, clips in enumerate(zip(clips1,clips2)):
                 multiclip = clips_array([clips])
                 multiclip.write_videofile(str(p)+'/'+clipname + '_' + str(i+1) +'.' + format, threads=4, logger = None)
+                multiclip.close()
 
         i=[os.remove(p / f'TESTclip1_{i}.mp4') for i, clip1 in enumerate(frames1)]
         i=[os.remove(p / f'TESTclip2_{i}.mp4') for i, clip1 in enumerate(frames2)]

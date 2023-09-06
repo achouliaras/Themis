@@ -82,7 +82,7 @@ def make_minigrid_env(cfg, render_mode=None):
                 ), 
                 max_episode_steps = 1000)
 
-    if cfg.human_teacher:
+    if cfg.human_teacher or cfg.debug:
         sim_env = gym.make(id=id, render_mode='rgb_array')
         sim_env = TimeLimit(
                     RewindWrapper(
