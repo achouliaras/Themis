@@ -226,17 +226,23 @@ class Xplain:
                 multiclip = clips_array([clips[0],clips[1]])
                 multiclip.write_videofile(str(p)+'/'+clipname + '_' + str(i+1) +'.' + format, threads=4, logger = None)
                 multiclip.close()
+
         else:
             for i, clips in enumerate(zip(clips1,clips2)):
                 multiclip = clips_array([clips])
                 multiclip.write_videofile(str(p)+'/'+clipname + '_' + str(i+1) +'.' + format, threads=4, logger = None)
                 multiclip.close()
 
-        i=[os.remove(p / f'TESTclip1_{i}.mp4') for i, clip1 in enumerate(frames1)]
-        i=[os.remove(p / f'TESTclip2_{i}.mp4') for i, clip1 in enumerate(frames2)]
+        [i.close() for i in clips1]
+        [i.close() for i in xclips1]
+        [i.close() for i in clips2]
+        [i.close() for i in xclips2]
+
+        i=[os.remove(p / f'TESTclip1_{i}.mp4') for i, clip in enumerate(frames1)]
+        i=[os.remove(p / f'TESTclip2_{i}.mp4') for i, clip in enumerate(frames2)]
         if xflag:
-            i=[os.remove(p / f'TESTxclip1_{i}.mp4') for i, clip1 in enumerate(xframes1)]
-            i=[os.remove(p / f'TESTxclip2_{i}.mp4') for i, clip1 in enumerate(xframes2)]
+            i=[os.remove(p / f'TESTxclip1_{i}.mp4') for i, clip in enumerate(xframes1)]
+            i=[os.remove(p / f'TESTxclip2_{i}.mp4') for i, clip in enumerate(xframes2)]
 
     def get_batch_input_keyboad(self, input_size):
         # Get human input from keyboard as a string of the individual choices
