@@ -345,7 +345,7 @@ class Workspace(object):
         self.reward_model.save(snapshot_dir, self.global_frame)
         keys_to_save = ['replay_buffer', 'step', 'episode']
         payload = {k: self.__dict__[k] for k in keys_to_save}
-        torch.save(payload, snapshot)
+        torch.save(payload, snapshot, pickle_protocol=4)
         
 @hydra.main(version_base=None, config_path="config", config_name='train_PEBBLE')
 def main(cfg : DictConfig):
