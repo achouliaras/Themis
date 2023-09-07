@@ -9,7 +9,7 @@ import math
 from collections import deque
 from gymnasium.wrappers.time_limit import TimeLimit
 from gymnasium.wrappers import NormalizeObservation, ResizeObservation
-from minigrid.wrappers import RGBImgObsWrapper, ImgObsWrapper, FullyObsWrapper
+from minigrid.wrappers import RGBImgObsWrapper, ImgObsWrapper, FullyObsWrapper, PositionBonus
 from rlkit.envs.wrappers import NormalizedBoxEnv, NormalizePixelObs
 
 #from stable_baselines3.common.env_util import make_atari_env as sb3env
@@ -59,7 +59,9 @@ def make_minigrid_env(cfg, render_mode=None):
             NormalizePixelObs(
                 ResizeObservation(
                     ImgObsWrapper(
-                        RGBImgObsWrapper(FullyObsWrapper(env))
+                        RGBImgObsWrapper(
+                            PositionBonus(FullyObsWrapper(env))
+                        )
                     ),
                     64
                 ),
@@ -73,7 +75,9 @@ def make_minigrid_env(cfg, render_mode=None):
                 NormalizePixelObs(
                     ResizeObservation(
                         ImgObsWrapper(
-                            RGBImgObsWrapper(FullyObsWrapper(eval_env))
+                            RGBImgObsWrapper(
+                                PositionBonus(FullyObsWrapper(eval_env))
+                            )
                         ),
                         64
                     ),
@@ -89,7 +93,9 @@ def make_minigrid_env(cfg, render_mode=None):
                         NormalizePixelObs(
                             ResizeObservation(
                                 ImgObsWrapper(
-                                    RGBImgObsWrapper(FullyObsWrapper(sim_env))
+                                    RGBImgObsWrapper(
+                                        PositionBonus(FullyObsWrapper(sim_env))
+                                    )
                                 ),
                                 64
                             ),
