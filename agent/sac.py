@@ -175,11 +175,13 @@ class SACAgent(Agent):
         obs = obs.unsqueeze(0)
         dist = self.actor(obs)
         if self.action_type == 'Cont':
+            # Action is a vector of float numbers
             action = dist.sample() if sample else dist.mean         
             action = action.clamp(*self.action_range)
             assert action.ndim == 2 and action.shape[0] == 1
             return utils.to_np(action[0])
         elif self.action_type == 'Discrete':
+            # Action is a flat integer
             action = dist.get_actions(deterministic=determ)
             return utils.to_np(action[0])
 

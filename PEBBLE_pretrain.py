@@ -102,11 +102,13 @@ class Workspace(object):
             self.state_type = 'pixel'
             self.policy = 'CNN'
             self.mode = 0
-            self.obs_space = self.env.observation_space#['image'] 
-            action_space = [1]                                                # or 7?
-            cfg.agent.obs_dim = self.env.observation_space.shape #['image'].shape
-            #print(self.env.observation_space)
-            #print(self.env.action_space)
+            self.obs_space = self.env.observation_space #['image'] 
+            sp = list(self.env.observation_space.shape) # Reorder first 2 dimensions to match state shape
+            self.obs_space_shape = sp[1], sp[0], sp[2]
+            
+            action_space = [1]
+            cfg.agent.obs_dim = self.obs_space_shape #['image'].shape
+
             cfg.agent.action_dim = int(self.env.action_space.n)
             cfg.agent.batch_size = 256
             cfg.agent.action_range = [0,1]
@@ -148,7 +150,7 @@ class Workspace(object):
 
         self.replay_buffer = ReplayBuffer(
             self.obs_space,
-            self.obs_space.shape,
+            self.obs_space_shape,
             action_space,
             self.action_type,
             int(cfg.replay_buffer_capacity), 
@@ -275,7 +277,6 @@ class Workspace(object):
                     self.logger.log('train/true_episode_success', episode_success, self.step)
                 
                 obs, info = self.env.reset(seed = self.cfg.seed)
-                
 
                 if self.action_type == 'Discrete' and self.state_type == 'grid':
                     obs = obs['image']

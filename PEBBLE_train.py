@@ -330,9 +330,11 @@ class Workspace(object):
 
             # sample action for data collection
             if self.step < self.cfg.num_seed_steps:
+                # Action is a vector of floats
                 action = self.env.action_space.sample()
             else:
                 with utils.eval_mode(self.agent):
+                    # Action is a vector of flat integer
                     action = self.agent.act(obs, sample=True, determ=False) # set determ=True in experiments
 
             # run training update (until the end)
@@ -405,7 +407,9 @@ class Workspace(object):
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
             if self.action_type == 'Discrete':
+                # if obs space contains more that an image
                 next_obs = next_obs['image'] if self.state_type == 'grid' else next_obs
+                # Convert action to int as the obs space
                 action = np.array([action], dtype=np.uint8)
             
             obs_flat = gym_utils.flatten(self.obs_space,obs)
