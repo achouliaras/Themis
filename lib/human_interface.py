@@ -9,10 +9,11 @@ from captum.attr import DeepLift, IntegratedGradients, LRP
 from captum.attr._utils.lrp_rules import EpsilonRule
 from captum.attr._core.lrp import SUPPORTED_LAYERS_WITH_RULES
 from captum.attr._utils.visualization import visualize_image_attr
+from captum.attr import visualization as viz
 import torch
 from torchsummary import summary
 import inspect
-
+import matplotlib.pyplot as plt
 SUPPORTED_LAYERS_WITH_RULES[nn.Flatten]= EpsilonRule
 
 class Xplain:
@@ -38,35 +39,28 @@ class Xplain:
         xclips = []
 
         for roll in sa_t:
-            env.reset(seed = seed)
-            env.render()
-            
-            #print(roll.shape)
-            if self.xplain_action:
-                x_obs = []
-                x_actions = []
-
             #print(obs_space.dtype)
-            #frames = []                 #ADDED
+            obs = []
             actions = []
             for timestep in roll:
                 
-                obs = timestep[:flat_obs_dim]
+                ob = timestep[:flat_obs_dim]
                 action = np.uint8(timestep[flat_obs_dim:])
 
                 if self.action_type == 'Discrete':
+                    # obs space is set as uint8 even if the actual obs is float after normalisation
+                    # The unflatten uses the obs space variable to determine the resulting dtype.
                     obs_space.dtype = np.float32
-                    obs = gym_utils.unflatten(obs_space,obs)
-
-                if self.xplain_action:
-                    x_obs.append(obs)
-                    x_actions.append(action)
+                    ob = gym_utils.unflatten(obs_space,ob)
                 
-                #frames.append(obs)              #ADDED
+                obs.append(ob)
                 actions.append(action)
                 
+            # Fix dtype to original type to avoid any possible sideffects or incosistencies.
             obs_space.dtype = np.uint8
-            env.set_state(obs)
+            
+            env.reset(seed = seed)
+            env.set_state(ob)
             frames = [env.render()]
 
             for i in range(roll.shape[0]):
@@ -74,14 +68,14 @@ class Xplain:
 
                 next_obs, _, _, _, _ = env.step(action)
                 frames.append(env.render())
-                obs = next_obs
+                ob = next_obs
 
             clips.append(frames)
 
-            # Use create Saliency maps for each trajectory
+            # Create Saliency maps for each trajectory
             if self.xplain_action:
                 if self.action_type == 'Discrete':
-                    xclip=self.saliency_map(x_obs, x_actions, frames)
+                    xclip=self.saliency_map(obs, actions, frames)
                     xclips.append(xclip)
                     #print('XAI = ', xclip)
         
@@ -98,7 +92,7 @@ class Xplain:
 
         return clips, xclips
 
-    def saliency_map(self, obs, action, frames):
+    def saliency_map(self, obs, actions, frames):
         model = self.agent.actor
         action_dim = self.agent.actor_cfg.action_dim
         # Change actor to eval mode to prevent it from learning
@@ -106,13 +100,14 @@ class Xplain:
         model.zero_grad()
 
         #xai = DeepLift(model)
-        #xai = IntegratedGradients(model)
-        xai = LRP(model)
+        xai = IntegratedGradients(model)
+        #xai = LRP(model)
         
-        xplain_flag =True
+        xplain_flag = True
+        plot_attrb = True
         mask = []
-        for ob, act, frm in zip(obs,action, frames):
-            #print('Obs before lrp =',ob.dtype)
+        for ob, act, frm in zip(obs, actions, frames):
+            #print('ob before lrp =',ob.dtype)
             attribution = xai.attribute(torch.tensor(ob).unsqueeze(0), 
                                       target = int(act[0]),
                                       additional_forward_args = (xplain_flag)).squeeze(0).cpu().detach().numpy()
@@ -125,7 +120,23 @@ class Xplain:
             #                               title='Overlayed LRP', use_pyplot=True)
             # print(figure)
             #mask.append(figure)
-            mask.append((attribution*100).astype(np.uint8))
+            
+            if(np.count_nonzero(attribution)>0 and plot_attrb == True):
+                plt.imshow(ob)
+                plt.show()
+                #print(attribution[attribution > 0])
+                #print(ob[ob != 0])
+                # viz.visualize_image_attr_multiple(attribution, frm,
+                #                 methods=["original_image", "heat_map"],
+                #                 signs=["all","all"],
+                #                 show_colorbar=True)
+                # viz.visualize_image_attr_multiple(attribution, np.array(ob*255),
+                #                 methods=["original_image", "heat_map"],
+                #                 signs=["all","all"],
+                #                 show_colorbar=True)
+                plot_attrb = False
+            
+            mask.append((attribution+128).astype(np.uint8))
         
         # Change actor back to train mode to continue training
         model.train()

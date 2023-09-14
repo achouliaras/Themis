@@ -76,9 +76,10 @@ class Workspace(object):
             self.policy = 'CNN'
             self.mode = 0
             self.obs_space = self.env.observation_space 
+            self.obs_space_shape = self.env.observation_space.shape
             
             action_space = [1]
-            cfg.agent.obs_dim = self.env.observation_space.shape
+            cfg.agent.obs_dim = self.obs_space_shape
             
             cfg.agent.action_dim = int(self.env.action_space.n)
             cfg.agent.batch_size = 256
@@ -102,18 +103,17 @@ class Workspace(object):
             self.state_type = 'pixel'
             self.policy = 'CNN'
             self.mode = 0
-            self.obs_space = self.env.observation_space #['image'] 
+            self.obs_space = self.env.observation_space 
             sp = list(self.env.observation_space.shape) # Reorder first 2 dimensions to match state shape
             self.obs_space_shape = sp[1], sp[0], sp[2]
             
             action_space = [1]
-            cfg.agent.obs_dim = self.obs_space_shape #['image'].shape
-
+            cfg.agent.obs_dim = self.obs_space_shape
             cfg.agent.action_dim = int(self.env.action_space.n)
             cfg.agent.batch_size = 256
             cfg.agent.action_range = [0,1]
-            critic_cfg = cfg.double_q_critic,
-            actor_cfg = cfg.categorical_actor,
+            critic_cfg = cfg.double_q_critic
+            actor_cfg = cfg.categorical_actor
         
             critic_cfg[0].action_type = self.action_type
             critic_cfg[0].policy = self.policy
