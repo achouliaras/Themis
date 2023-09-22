@@ -55,63 +55,58 @@ def make_minigrid_env(cfg, render_mode=None):
     #Helper function to create MiniGrid environment
     id=cfg.domain+'-'+cfg.env
     env = gym.make(id=id, render_mode=None)
+    
     env = TimeLimit(
             NormalizePixelObs(
-                ResizeObservation(
-                    ImgObsWrapper(
-                        RGBImgObsWrapper(
-                            PositionBonus(FullyObsWrapper(env))
-                        )
-                    ),
-                    64
+                ImgObsWrapper(
+                    RGBImgObsWrapper(
+                        PositionBonus(FullyObsWrapper(env)),
+                        tile_size = 10
+                    )
                 ),
                 reward_scale = cfg.reward_scale,
                 reward_intercept = cfg.reward_intercept
             ), 
-             max_episode_steps = 1000)
+             max_episode_steps = 100)
 
     eval_env =  gym.make(id=id, render_mode=render_mode)   
     eval_env = TimeLimit(
                 NormalizePixelObs(
-                    ResizeObservation(
-                        ImgObsWrapper(
-                            RGBImgObsWrapper(
-                                PositionBonus(FullyObsWrapper(eval_env))
-                            )
-                        ),
-                        64
+                    ImgObsWrapper(
+                        RGBImgObsWrapper(
+                            PositionBonus(FullyObsWrapper(eval_env)),
+                            tile_size = 10
+                        )
                     ),
                     reward_scale = cfg.reward_scale,
                     reward_intercept = cfg.reward_intercept
                 ), 
-                max_episode_steps = 1000)
+                max_episode_steps = 100)
 
     if cfg.human_teacher or cfg.debug:
         sim_env = gym.make(id=id, render_mode='rgb_array')
         sim_env = TimeLimit(
                     RewindWrapper(
                         NormalizePixelObs(
-                            ResizeObservation(
-                                ImgObsWrapper(
-                                    RGBImgObsWrapper(
-                                        PositionBonus(FullyObsWrapper(sim_env))
-                                    )
-                                ),
-                                64
+                            ImgObsWrapper(
+                                RGBImgObsWrapper(
+                                    PositionBonus(FullyObsWrapper(sim_env)),
+                                    tile_size = 10
+                                )
                             ),
                             reward_scale = cfg.reward_scale,
                             reward_intercept = cfg.reward_intercept
                         )
                     ), 
-                    max_episode_steps = 1000)    
-        
+                    max_episode_steps = 100)
+
     return env, eval_env, sim_env
 
 def make_atari_env(cfg, render_mode=None):
     env = eval_env = sim_env = None
     #Helper function to create Atari environment
     id=cfg.domain+'/'+cfg.env
-    #env = sb3env()
+    
     env = gym.make(id=id, 
                    mode=cfg.mode, 
                    difficulty=cfg.difficulty, 
@@ -131,9 +126,9 @@ def make_atari_env(cfg, render_mode=None):
                         repeat_action_probability=cfg.repeat_action_probability,
                         full_action_space=cfg.full_action_space,
                         render_mode = render_mode)
-    #eval_env = TimeLimit(eval_env, max_episode_steps= eval_env.spec.max_episode_steps) # Not working properly
+    eval_env = TimeLimit(eval_env, max_episode_steps= eval_env.spec.max_episode_steps) # Not working properly
     
-    if cfg.human_teacher:
+    if cfg.human_teacher or cfg.debug:
         sim_env = gym.make(id=id, 
                    mode=cfg.mode, 
                    difficulty=cfg.difficulty, 
@@ -142,7 +137,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode='rgb_array')
-        s#im_env = TimeLimit(RewindWrapper(sim_env), max_episode_steps= sim_env.spec.max_episode_steps) # Not working properly
+        sim_env = TimeLimit(RewindWrapper(sim_env), max_episode_steps= sim_env.spec.max_episode_steps) # Not working properly
 
     return env, eval_env, sim_env
 
