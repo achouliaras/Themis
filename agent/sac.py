@@ -134,8 +134,8 @@ class SACAgent(Agent):
         return actor
     
     def reset_critic(self):
-        #self.critic = hydra.utils.instantiate(self.critic_cfg).to(self.device)
-        #self.critic_target = hydra.utils.instantiate(self.critic_cfg).to(self.device)
+        # The CNN feature shouldn't reset...
+        # copy them and paste on top of the reseted critics
         self.critic = self.create_critic()
         self.critic_target = self.create_critic()
         self.critic_target.load_state_dict(self.critic.state_dict())

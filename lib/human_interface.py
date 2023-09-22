@@ -89,6 +89,16 @@ class Xplain:
         # print('Xclip= ', xclip[0].shape)
         # print('Xclip= ', xclip[0].dtype)
         # print(len(xclip))
+        
+        plot_attrb = False
+        if(plot_attrb == True):
+            print("Xplain= ", xclips[0][0].shape)
+            print("Frame= ", frames[0].shape)
+            print("State= ", obs[0].shape)
+
+            plt.imshow(xclips[0][0])
+            plt.show()
+            plot_attrb = False
 
         return clips, xclips
 
@@ -99,19 +109,18 @@ class Xplain:
         model.eval()
         model.zero_grad()
 
-        #xai = DeepLift(model)
-        xai = IntegratedGradients(model)
+        xai = DeepLift(model)
+        #xai = IntegratedGradients(model)
         #xai = LRP(model)
         
         xplain_flag = True
         plot_attrb = True
         mask = []
         for ob, act, frm in zip(obs, actions, frames):
-            #print('ob before lrp =',ob.dtype)
             attribution = xai.attribute(torch.tensor(ob).unsqueeze(0), 
                                       target = int(act[0]),
                                       additional_forward_args = (xplain_flag)).squeeze(0).cpu().detach().numpy()
-            #print(attribution.shape)
+            
             # figure = visualize_image_attr(attr= attribution, 
             #                               original_image= ob, 
             #                               method= 'blended_heat_map',
@@ -121,9 +130,13 @@ class Xplain:
             # print(figure)
             #mask.append(figure)
             
-            if(np.count_nonzero(attribution)>0 and plot_attrb == True):
-                plt.imshow(ob)
-                plt.show()
+            # if(np.count_nonzero(attribution)>0 and plot_attrb == True):
+            #     print("Xplain= ",attribution.shape)
+            #     print("Frame= ", frm.shape)
+            #     print("State= ", ob.shape)
+
+            #     plt.imshow(frm)
+            #     plt.show()
                 #print(attribution[attribution > 0])
                 #print(ob[ob != 0])
                 # viz.visualize_image_attr_multiple(attribution, frm,
@@ -134,9 +147,9 @@ class Xplain:
                 #                 methods=["original_image", "heat_map"],
                 #                 signs=["all","all"],
                 #                 show_colorbar=True)
-                plot_attrb = False
+                #plot_attrb = False
             
-            mask.append((attribution+128).astype(np.uint8))
+            mask.append((attribution).astype(np.uint8))
         
         # Change actor back to train mode to continue training
         model.train()

@@ -8,7 +8,7 @@ import math
 
 from collections import deque
 from gymnasium.wrappers.time_limit import TimeLimit
-from gymnasium.wrappers import NormalizeObservation, ResizeObservation
+from gymnasium.wrappers import NormalizeObservation, ResizeObservation, FrameStack
 from minigrid.wrappers import RGBImgObsWrapper, ImgObsWrapper, FullyObsWrapper, PositionBonus
 from rlkit.envs.wrappers import NormalizedBoxEnv, NormalizePixelObs
 
@@ -44,7 +44,7 @@ def make_control_env(cfg, render_mode=None):
     eval_env =  gym.make(id=id, render_mode=render_mode)   
     eval_env = TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
 
-    if cfg.human_teacher:
+    if cfg.human_teacher or cfg.debug:
         sim_env = gym.make(id=id, render_mode='rgb_array')
         sim_env = TimeLimit(RewindWrapper(NormalizedBoxEnv(sim_env)), sim_env._max_episode_steps)
 
@@ -106,7 +106,8 @@ def make_atari_env(cfg, render_mode=None):
     env = eval_env = sim_env = None
     #Helper function to create Atari environment
     id=cfg.domain+'/'+cfg.env
-    
+    max_episode_steps = 1000
+
     env = gym.make(id=id, 
                    mode=cfg.mode, 
                    difficulty=cfg.difficulty, 
@@ -115,8 +116,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode=None)
-    #print(env.action_space) # Remove normalise probably
-    #env = TimeLimit(env, max_episode_steps= env.spec.max_episode_steps) # Not working properly
+    env = TimeLimit(ResizeObservation(env,64), max_episode_steps = max_episode_steps)
 
     eval_env =  gym.make(id=id, 
                         mode=cfg.mode, 
@@ -126,7 +126,7 @@ def make_atari_env(cfg, render_mode=None):
                         repeat_action_probability=cfg.repeat_action_probability,
                         full_action_space=cfg.full_action_space,
                         render_mode = render_mode)
-    eval_env = TimeLimit(eval_env, max_episode_steps= eval_env.spec.max_episode_steps) # Not working properly
+    eval_env = TimeLimit(ResizeObservation(eval_env,64), max_episode_steps = max_episode_steps)
     
     if cfg.human_teacher or cfg.debug:
         sim_env = gym.make(id=id, 
@@ -137,7 +137,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode='rgb_array')
-        sim_env = TimeLimit(RewindWrapper(sim_env), max_episode_steps= sim_env.spec.max_episode_steps) # Not working properly
+        sim_env = TimeLimit(RewindWrapper(ResizeObservation(sim_env),64), max_episode_steps = max_episode_steps)
 
     return env, eval_env, sim_env
 
