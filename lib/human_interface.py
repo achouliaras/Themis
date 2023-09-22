@@ -245,9 +245,10 @@ class Xplain:
                 multiclip.close()
 
         [i.close() for i in clips1]
-        [i.close() for i in xclips1]
         [i.close() for i in clips2]
-        [i.close() for i in xclips2]
+        if xflag:
+            [i.close() for i in xclips2]
+            [i.close() for i in xclips1]
 
         i=[os.remove(p / f'TESTclip1_{i}.mp4') for i, clip in enumerate(frames1)]
         i=[os.remove(p / f'TESTclip2_{i}.mp4') for i, clip in enumerate(frames2)]
