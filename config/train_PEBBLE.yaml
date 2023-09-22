@@ -34,7 +34,8 @@ teacher_eps_equal: 0    # Probability of considering both segments equally good
 reward_schedule: 0
 
 num_train_steps: 1000000
-replay_buffer_capacity: ${num_train_steps}
+replay_buffer_capacity: 10000
+reward_model_capacity: 10000
 
 # evaluation config
 eval_frequency: 50 #10000

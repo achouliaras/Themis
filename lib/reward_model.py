@@ -78,7 +78,7 @@ def compute_smallest_dist(obs, full_obs):
 class RewardModel:
     def __init__(self, obs_space, ds, da, action_type,
                  ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
-                 env=None, seed = 0, max_size=100, activation='tanh', capacity=5e5,  
+                 env=None, seed = 0, max_size=100, activation='tanh', capacity=1e4,  
                  large_batch=1, label_margin=0.0, reward_scale=1, reward_intercept=0, human_teacher=False,
                  teacher_beta=-1, teacher_gamma=1, teacher_eps_mistake=0, 
                  teacher_eps_skip=0, teacher_eps_equal=0, ui_module = None):
@@ -205,6 +205,7 @@ class RewardModel:
             else:
                 self.inputs[-1] = np.concatenate([self.inputs[-1], flat_input])
                 self.targets[-1] = np.concatenate([self.targets[-1], flat_target])
+        
                 
     def add_data_batch(self, obses, rewards):
         num_env = obses.shape[0]

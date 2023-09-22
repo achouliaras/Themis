@@ -177,6 +177,7 @@ class Workspace(object):
             size_segment=cfg.segment,
             env = self.sim_env,
             activation=cfg.activation, 
+            capacity=cfg.reward_model_capacity,
             lr=cfg.reward_lr,
             mb_size=cfg.reward_batch, 
             large_batch=cfg.large_batch, 

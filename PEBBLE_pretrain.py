@@ -165,13 +165,14 @@ class Workspace(object):
         
         # instantiating the reward model
         self.reward_model = RewardModel(
-            self.obs_space,
-            gym_utils.flatdim(self.obs_space),
-            action_space[0],
-            self.action_type,
+            obs_space=self.obs_space,
+            ds=gym_utils.flatdim(self.obs_space),
+            da=action_space[0],
+            action_type=self.action_type,
             ensemble_size=cfg.ensemble_size,
             size_segment=cfg.segment,
-            activation=cfg.activation, 
+            activation=cfg.activation,
+            capacity=cfg.reward_model_capacity, 
             lr=cfg.reward_lr,
             mb_size=cfg.reward_batch, 
             large_batch=cfg.large_batch, 
