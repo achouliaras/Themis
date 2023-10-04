@@ -46,7 +46,7 @@ class Xplain:
                 
                 ob = timestep[:flat_obs_dim]
                 action = np.uint8(timestep[flat_obs_dim:])
-
+                
                 if self.action_type == 'Discrete':
                     # obs space is set as uint8 even if the actual obs is float after normalisation
                     # The unflatten uses the obs space variable to determine the resulting dtype.
@@ -65,8 +65,8 @@ class Xplain:
 
             for i in range(roll.shape[0]):
                 action = actions[i]
-
-                next_obs, _, _, _, _ = env.step(action)
+                
+                next_obs, _, _, _, _ = env.step(action[0])
                 frames.append(env.render())
                 ob = next_obs
 

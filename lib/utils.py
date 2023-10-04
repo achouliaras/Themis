@@ -137,7 +137,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode='rgb_array')
-        sim_env = TimeLimit(RewindWrapper(ResizeObservation(sim_env),64), max_episode_steps = max_episode_steps)
+        sim_env = TimeLimit(RewindWrapper(ResizeObservation(sim_env,64)), max_episode_steps = max_episode_steps)
 
     return env, eval_env, sim_env
 
