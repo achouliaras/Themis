@@ -64,13 +64,14 @@ class Xplain:
             frames = [env.render()]
 
             for i in range(roll.shape[0]):
-                action = actions[i]
-                
-                next_obs, _, _, _, _ = env.step(action[0])
+                action = actions[i][0]
+                #print(actions)
+                next_obs, _, _, _, _ = env.step(action)
                 frames.append(env.render())
                 ob = next_obs
 
-            clips.append(frames)
+            #clips.append(frames)
+            clips.append(obs)
 
             # Create Saliency maps for each trajectory
             if self.xplain_action:
@@ -130,14 +131,14 @@ class Xplain:
             # print(figure)
             #mask.append(figure)
             
-            # if(np.count_nonzero(attribution)>0 and plot_attrb == True):
+            #if(np.count_nonzero(attribution)>0 and plot_attrb == True):
             #     print("Xplain= ",attribution.shape)
             #     print("Frame= ", frm.shape)
             #     print("State= ", ob.shape)
 
             #     plt.imshow(frm)
             #     plt.show()
-                #print(attribution[attribution > 0])
+                #print(attribution[attribution != 0])
                 #print(ob[ob != 0])
                 # viz.visualize_image_attr_multiple(attribution, frm,
                 #                 methods=["original_image", "heat_map"],
