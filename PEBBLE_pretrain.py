@@ -307,6 +307,7 @@ class Workspace(object):
                 self.agent.update_state_ent(self.replay_buffer, self.logger, self.step, gradient_update=1, K=self.cfg.topK)
                 #print('OK')
                 
+            snapshot = self.env.get_state()
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
             if self.action_type == 'Discrete':
@@ -326,7 +327,7 @@ class Workspace(object):
                 episode_success = max(episode_success, terminated)
                 
             # adding data to the reward training data
-            self.reward_model.add_data(obs_flat, action, reward, terminated, truncated)
+            self.reward_model.add_data(obs_flat, action, reward, terminated, truncated, snapshot)
             self.replay_buffer.add(obs, action, reward_hat, next_obs, terminated, truncated)
 
             obs = next_obs

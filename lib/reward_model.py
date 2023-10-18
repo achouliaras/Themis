@@ -112,6 +112,7 @@ class RewardModel:
         self.construct_ensemble()
         self.inputs = []
         self.targets = []
+        self.snapshots =[]
         self.raw_actions = []
         self.img_inputs = []
         self.mb_size = mb_size
@@ -170,7 +171,7 @@ class RewardModel:
             
         self.opt = torch.optim.Adam(self.paramlst, lr = self.lr)
             
-    def add_data(self, obs, act, rew, terminated, truncated):
+    def add_data(self, obs, act, rew, terminated, truncated, snapshot):
         #print(type(obs))
         #print(obs.shape)
         obs_flat = gym_utils.flatten(self.obs_space, obs)
@@ -189,29 +190,35 @@ class RewardModel:
         if init_data:
             self.inputs.append(flat_input)
             self.targets.append(flat_target)
+            self.snapshots.append([snapshot])
         elif terminated or truncated:
             self.inputs[-1] = np.concatenate([self.inputs[-1], flat_input])
             self.targets[-1] = np.concatenate([self.targets[-1], flat_target])
+            self.snapshots[-1].append(snapshot)
             # FIFO on overflow
             if len(self.inputs) > self.max_size:
                 self.inputs = self.inputs[1:]
                 self.targets = self.targets[1:]
+                self.snapshots = self.snapshots[1:]
             self.inputs.append([])
             self.targets.append([])
+            self.snapshots.append([])
         else:
             if len(self.inputs[-1]) == 0:
                 self.inputs[-1] = flat_input
                 self.targets[-1] = flat_target
+                self.snapshots[-1] = [snapshot]
             else:
                 self.inputs[-1] = np.concatenate([self.inputs[-1], flat_input])
                 self.targets[-1] = np.concatenate([self.targets[-1], flat_target])
-        
+                self.snapshots[-1].append(snapshot)   
                 
-    def add_data_batch(self, obses, rewards):
+    def add_data_batch(self, obses, rewards, snapshots):
         num_env = obses.shape[0]
         for index in range(num_env):
             self.inputs.append(obses[index])
             self.targets.append(rewards[index])
+            self.snapshots.append(snapshots[index])
         
     def get_rank_probability(self, x_1, x_2):
         # get probability x_1 > x_2
@@ -281,15 +288,15 @@ class RewardModel:
     def save(self, model_dir, step):
         
         payload = { f'member_{i}' : member.state_dict() for i, member in enumerate(self.ensemble)}
-        keys_to_save =['inputs', 'targets', 'paramlst']
+        keys_to_save =['inputs', 'targets', 'snapshots', 'paramlst']
         payload = payload | {k: self.__dict__[k] for k in keys_to_save}
         torch.save(payload, '%s/reward_model_%s.pt' % (model_dir, step))
             
     def load(self, model_dir, step):
         payload = torch.load('%s/reward_model_%s.pt' % (model_dir, step))
 
-        keys_to_load =['inputs', 'targets', 'paramlst']
-        self.inputs, self.targets, self.paramlst =  [payload[k] for k in keys_to_load]
+        keys_to_load =['inputs', 'targets', 'snapshots', 'paramlst']
+        self.inputs, self.targets, self.snapshots, self.paramlst =  [payload[k] for k in keys_to_load]
         
         for i in range(self.de): 
             self.ensemble[i].load_state_dict(payload[f'member_{i}'])
@@ -350,14 +357,17 @@ class RewardModel:
         # get train traj
         train_inputs = self.inputs[:max_len]    #turn inputs into arrays (minus the last one probably)
         train_targets = self.targets[:max_len]
+        train_snapshots = self.snapshots[:max_len]
 
         batch_index_2 = np.random.choice(max_len, size=mb_size, replace=True) # sample mp_size of those inputs
         sa_t_2 = [train_inputs[i] for i in batch_index_2] # mb_size x (Time x dim of s&a)
         r_t_2 = [train_targets[i] for i in batch_index_2] # mb_size x (Time x 1)
+        snaps_2 = [train_snapshots[i] for i in batch_index_2] # mb_size x (Time x dim of s&a)
 
         batch_index_1 = np.random.choice(max_len, size=mb_size, replace=True)
         sa_t_1 = [train_inputs[i] for i in batch_index_1] # mb_size x (Time x dim of s&a)
         r_t_1 = [train_targets[i] for i in batch_index_1] # mb_size x (Time x 1)
+        snaps_1 = [train_snapshots[i] for i in batch_index_1] # mb_size x (Time x dim of s&a)
 
         sa_t_2_padded = np.zeros((mb_size, self.size_segment, self.ds+self.da), dtype=self.seg_dtype)
         r_t_2_padded = np.zeros((mb_size, self.size_segment, 1))
@@ -380,8 +390,10 @@ class RewardModel:
             
             sa_t_2[i] = np.take(sa_t_2[i], time_index_2[i], axis=0) # Batch[i] x (size_seg x dim of s&a)
             r_t_2[i] = np.take(r_t_2[i], time_index_2[i], axis=0)   # Batch[i] x (size_seg x 1)
+            snaps_2[i] = np.take(snaps_2[i], time_index_2[i], axis=0) # Batch[i] x (size_seg x dim of s&a)
             sa_t_1[i] = np.take(sa_t_1[i], time_index_1[i], axis=0) # Batch[i] x (size_seg x dim of s&a)
             r_t_1[i] = np.take(r_t_1[i], time_index_1[i], axis=0)   # Batch[i] x (size_seg x 1)
+            snaps_1[i] = np.take(snaps_1[i], time_index_1[i], axis=0) # Batch[i] x (size_seg x dim of s&a)
 
             mean_state2 = np.mean(sa_t_2[i][:size_segment, :self.ds])
             mean_reward2 = np.mean(r_t_2[i][:size_segment])
@@ -400,13 +412,14 @@ class RewardModel:
                 
                 np.copyto( sa_t_2_padded[i][j,self.ds:] , random_actions2)
                 np.copyto( sa_t_1_padded[i][j,self.ds:] , random_actions1)
+                print('THA TRELATHW MPHKE STO PAD...')
                 
         np.copyto( sa_t_2_padded[:, :size_segment] , np.array(sa_t_2))
         np.copyto( r_t_2_padded[:, :size_segment] , np.array(r_t_2))
         np.copyto( sa_t_1_padded[:, :size_segment] , np.array(sa_t_1))
         np.copyto( r_t_1_padded[:, :size_segment] , np.array(r_t_1))
 
-        return sa_t_1_padded, sa_t_2_padded, r_t_1_padded, r_t_2_padded
+        return sa_t_1_padded, sa_t_2_padded, r_t_1_padded, r_t_2_padded, snaps_1, snaps_2
 
     def put_queries(self, sa_t_1, sa_t_2, labels):
         total_sample = sa_t_1.shape[0]          # Fix changes based on new padded states
@@ -433,7 +446,7 @@ class RewardModel:
             np.copyto(self.buffer_label[self.buffer_index:next_index], labels)
             self.buffer_index = next_index
             
-    def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2, first_flag=False):
+    def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2, first_flag=False):
         sum_r_t_1 = np.sum(r_t_1, axis=1)
         sum_r_t_2 = np.sum(r_t_2, axis=1)
 
@@ -441,9 +454,8 @@ class RewardModel:
         #print(self.env.observation_space.shape[0])
             
         #print('Get Label ',sa_t_1[0].dtype)
-
-        clips1, xclips1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, copy.deepcopy(self.obs_space))
-        clips2, xclips2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, copy.deepcopy(self.obs_space))
+        clips1, xclips1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, snaps_1, copy.deepcopy(self.obs_space))
+        clips2, xclips2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, snaps_2, copy.deepcopy(self.obs_space))
         
         #self.ui_module.generate_merged_clip(clips1, xclips1, clips2, xclips2, 'TestMergedClips', 'mp4')
         self.ui_module.generate_paired_clips(clips1, xclips1, clips2, xclips2, 'TestPairClip', 'mp4')
@@ -517,7 +529,7 @@ class RewardModel:
         
         # get queries
         num_init = self.mb_size*self.large_batch
-        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
+        sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2 =  self.get_queries(
             mb_size=num_init)
         
         # get final queries based on kmeans clustering
@@ -540,7 +552,7 @@ class RewardModel:
         
         # get labels
         sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-            sa_t_1, sa_t_2, r_t_1, r_t_2)
+            sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2)
         
         if len(labels) > 0:
             self.put_queries(sa_t_1, sa_t_2, labels)
@@ -553,7 +565,7 @@ class RewardModel:
         num_init_half = int(num_init*0.5)
         
         # get queries
-        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
+        sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2 =  self.get_queries(
             mb_size=num_init)
         
         # get final queries based on uncertainty
@@ -583,7 +595,7 @@ class RewardModel:
 
         # get labels
         sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-            sa_t_1, sa_t_2, r_t_1, r_t_2)
+            sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2)
         
         if len(labels) > 0:
             self.put_queries(sa_t_1, sa_t_2, labels)
@@ -596,7 +608,7 @@ class RewardModel:
         num_init_half = int(num_init*0.5)
         
         # get queries
-        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
+        sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2 =  self.get_queries(
             mb_size=num_init)
         
         
@@ -627,7 +639,7 @@ class RewardModel:
 
         # get labels
         sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-            sa_t_1, sa_t_2, r_t_1, r_t_2)
+            sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2)
         
         if len(labels) > 0:
             self.put_queries(sa_t_1, sa_t_2, labels)
@@ -636,11 +648,10 @@ class RewardModel:
     
     def uniform_sampling(self, first_flag=0):
         # get queries
-        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(mb_size=self.mb_size)
+        sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2 =  self.get_queries(mb_size=self.mb_size)
         
-
         # get labels
-        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(sa_t_1, sa_t_2, r_t_1, r_t_2, first_flag=first_flag)
+        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2, first_flag=first_flag)
         
         if len(labels) > 0:
             self.put_queries(sa_t_1, sa_t_2, labels)
@@ -650,7 +661,7 @@ class RewardModel:
     def disagreement_sampling(self):
         
         # get queries
-        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
+        sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2 =  self.get_queries(
             mb_size=self.mb_size*self.large_batch)
         
         # get final queries based on uncertainty
@@ -661,7 +672,7 @@ class RewardModel:
         
         # get labels
         sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-            sa_t_1, sa_t_2, r_t_1, r_t_2)        
+            sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2)        
         if len(labels) > 0:
             self.put_queries(sa_t_1, sa_t_2, labels)
         
@@ -670,7 +681,7 @@ class RewardModel:
     def entropy_sampling(self):
         
         # get queries
-        sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
+        sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2 =  self.get_queries(
             mb_size=self.mb_size*self.large_batch)
         
         # get final queries based on uncertainty
@@ -682,7 +693,7 @@ class RewardModel:
         
         # get labels
         sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(    
-            sa_t_1, sa_t_2, r_t_1, r_t_2)
+            sa_t_1, sa_t_2, r_t_1, r_t_2, snaps_1, snaps_2)
         
         if len(labels) > 0:
             self.put_queries(sa_t_1, sa_t_2, labels)

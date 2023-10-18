@@ -16,6 +16,8 @@ import inspect
 import matplotlib.pyplot as plt
 SUPPORTED_LAYERS_WITH_RULES[nn.Flatten]= EpsilonRule
 
+import sys
+
 class Xplain:
     def __init__(self, agent, action_type, 
                  xplain_action = True, 
@@ -31,14 +33,16 @@ class Xplain:
         self.xplain_reward = xplain_reward
         self.xplain_Qvalue = xplain_Qvalue
 
-    def generate_frames(self, sa_t, env, seed, obs_space):
+    def generate_frames(self, sa_t, env, seed, snaps, obs_space):
         # STATE Explanation could be added HERE
         flat_obs_dim = gym_utils.flatdim(obs_space)
 
         clips =[]
+        clips_raw=[]
         xclips = []
-
-        for roll in sa_t:
+        
+        #print(f'SA_T: {sa_t.shape}')
+        for i, roll  in enumerate(sa_t):
             #print(obs_space.dtype)
             obs = []
             actions = []
@@ -58,49 +62,49 @@ class Xplain:
                 
             # Fix dtype to original type to avoid any possible sideffects or incosistencies.
             obs_space.dtype = np.uint8
-            
-            env.reset(seed = seed)
-            env.set_state(ob)
-            frames = [env.render()]
 
-            for i in range(roll.shape[0]):
-                action = actions[i]
-                
+            env.reset(seed = seed)
+            #env.set_state(ob)
+            #frames = [env.render()]
+            frames=[]
+            
+            for j in range(roll.shape[0]):
+                action = actions[j]
+                env.set_state(snaps[i][j])
                 next_obs, _, _, _, _ = env.step(action[0])
                 frames.append(env.render())
-                ob = next_obs
+
+                ### Fix for other envs as well ###
 
             clips.append(frames)
+            clips_raw.append(obs)
 
             # Create Saliency maps for each trajectory
             if self.xplain_action:
                 if self.action_type == 'Discrete':
                     xclip=self.saliency_map(obs, actions, frames)
                     xclips.append(xclip)
-                    #print('XAI = ', xclip)
+                    #print('XAI = ', len(xclip))
         
-        #clips = [[(i*100).astype(np.uint8) for i in roll] for roll in clips]
-        # print(len(clips))
-        # print(len(clips[0]))
-        # print('Clip= ', clips[0][0].shape)
-        # print('Clip= ', clips[0][0].dtype)
-        # print(type(clips[0][0]))
-        
-        # print('Xclip= ', xclip[0].shape)
-        # print('Xclip= ', xclip[0].dtype)
-        # print(len(xclip))
+        print(f'Clips {len(clips)}')
+        print(f'Xclips {len(xclips)}')
         
         plot_attrb = False
         if(plot_attrb == True):
+            #print(len(xclips[0]))
             print("Xplain= ", xclips[0][0].shape)
             print("Frame= ", frames[0].shape)
             print("State= ", obs[0].shape)
 
             plt.imshow(xclips[0][0])
-            plt.show()
+            plt.savefig('Clips/exclip.png')
+            plt.imshow(frames[0])
+            plt.savefig('Clips/frame.png')
+            plt.imshow(obs[0])
+            plt.savefig('Clips/ob.png')
             plot_attrb = False
 
-        return clips, xclips
+        return clips, xclips #clips_raw
 
     def saliency_map(self, obs, actions, frames):
         model = self.agent.actor
@@ -121,34 +125,8 @@ class Xplain:
                                       target = int(act[0]),
                                       additional_forward_args = (xplain_flag)).squeeze(0).cpu().detach().numpy()
             
-            # figure = visualize_image_attr(attr= attribution, 
-            #                               original_image= ob, 
-            #                               method= 'blended_heat_map',
-            #                               sign='all',
-            #                               show_colorbar=True,
-            #                               title='Overlayed LRP', use_pyplot=True)
-            # print(figure)
-            #mask.append(figure)
             
-            # if(np.count_nonzero(attribution)>0 and plot_attrb == True):
-            #     print("Xplain= ",attribution.shape)
-            #     print("Frame= ", frm.shape)
-            #     print("State= ", ob.shape)
-
-            #     plt.imshow(frm)
-            #     plt.show()
-                #print(attribution[attribution > 0])
-                #print(ob[ob != 0])
-                # viz.visualize_image_attr_multiple(attribution, frm,
-                #                 methods=["original_image", "heat_map"],
-                #                 signs=["all","all"],
-                #                 show_colorbar=True)
-                # viz.visualize_image_attr_multiple(attribution, np.array(ob*255),
-                #                 methods=["original_image", "heat_map"],
-                #                 signs=["all","all"],
-                #                 show_colorbar=True)
-                #plot_attrb = False
-            
+            #print(attribution.shape)
             mask.append((attribution).astype(np.uint8))
         
         # Change actor back to train mode to continue training
@@ -212,12 +190,13 @@ class Xplain:
         fps = 5
         scale = 256
         xflag = True if len(xframes1) + len(xframes2) > 0 else False
+        kargs = { 'macro_block_size': None }
 
         clips1=[]
         for i, clip1 in enumerate(frames1):
             filename = f'TESTclip1_{i}.mp4'
             with open(p / filename, 'wb') as file1:
-                imageio.mimsave(p / filename, clip1, fps=fps)
+                imageio.mimsave(p / filename, clip1, fps=fps, **kargs)
             clips1.append(VideoFileClip(str(p / filename)).margin(10).resize((scale, scale)))
         
         if xflag:
@@ -232,7 +211,7 @@ class Xplain:
         for i, clip2 in enumerate(frames2):
             filename = f'TESTclip2_{i}.mp4'
             with open(p / filename, 'wb') as file2:
-                imageio.mimsave(p / filename, clip2, fps=fps)
+                imageio.mimsave(p / filename, clip2, fps=fps, **kargs)
             clips2.append(VideoFileClip(str(p / filename)).margin(10).resize((scale, scale)))
         
         if xflag:

@@ -409,11 +409,10 @@ class Workspace(object):
                 else:
                     frac = 1
                 self.reward_model.change_batch(frac)
-                
                 # update margin --> not necessary / will be updated soon
-                new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
-                self.reward_model.set_teacher_thres_skip(new_margin)
-                self.reward_model.set_teacher_thres_equal(new_margin)
+                #new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
+                #self.reward_model.set_teacher_thres_skip(new_margin)
+                #self.reward_model.set_teacher_thres_equal(new_margin)
                 
                 # first learn reward
                 self.learn_reward(first_flag=1)
@@ -433,6 +432,7 @@ class Workspace(object):
                 # reset interact_count
                 interact_count = 0
   
+            snapshot = self.env.get_state()
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
             if self.action_type == 'Discrete':
@@ -454,7 +454,7 @@ class Workspace(object):
                 episode_success = max(episode_success, terminated)
             
             # adding data to the reward training data
-            self.reward_model.add_data(obs, action, reward, terminated, truncated)
+            self.reward_model.add_data(obs, action, reward, terminated, truncated, snapshot)
             self.replay_buffer.add(obs, action, reward_hat, next_obs, terminated, truncated)
 
             obs = next_obs

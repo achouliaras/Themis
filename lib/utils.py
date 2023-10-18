@@ -39,14 +39,14 @@ def make_control_env(cfg, render_mode=None):
     #Helper function to create MUJOCO environment
     id = cfg.env
     env = gym.make(id=id, render_mode=None)   
-    env = TimeLimit(NormalizedBoxEnv(env), env._max_episode_steps)
+    env = TimeLimit(RewindWrapper(NormalizedBoxEnv(env), cfg.domain), env._max_episode_steps)
 
-    eval_env =  gym.make(id=id, render_mode=render_mode)   
+    eval_env =  gym.make(id=id, render_mode=render_mode)
     eval_env = TimeLimit(NormalizedBoxEnv(eval_env), eval_env._max_episode_steps)
 
     if cfg.human_teacher or cfg.debug:
         sim_env = gym.make(id=id, render_mode='rgb_array')
-        sim_env = TimeLimit(RewindWrapper(NormalizedBoxEnv(sim_env)), sim_env._max_episode_steps)
+        sim_env = TimeLimit(RewindWrapper(NormalizedBoxEnv(sim_env), cfg.domain), sim_env._max_episode_steps)
 
     return env, eval_env, sim_env
 
@@ -57,17 +57,19 @@ def make_minigrid_env(cfg, render_mode=None):
     env = gym.make(id=id, render_mode=None)
     
     env = TimeLimit(
-            NormalizePixelObs(
-                ImgObsWrapper(
-                    RGBImgObsWrapper(
-                        PositionBonus(FullyObsWrapper(env)),
-                        tile_size = 10
-                    )
-                ),
-                reward_scale = cfg.reward_scale,
-                reward_intercept = cfg.reward_intercept
-            ), 
-             max_episode_steps = 100)
+            RewindWrapper(
+                NormalizePixelObs(
+                    ImgObsWrapper(
+                        RGBImgObsWrapper(
+                            PositionBonus(FullyObsWrapper(env)),
+                            tile_size = 10
+                        )
+                    ),
+                    reward_scale = cfg.reward_scale,
+                    reward_intercept = cfg.reward_intercept
+                ), 
+                cfg.domain), 
+            max_episode_steps = 100)
 
     eval_env =  gym.make(id=id, render_mode=render_mode)   
     eval_env = TimeLimit(
@@ -96,7 +98,7 @@ def make_minigrid_env(cfg, render_mode=None):
                             ),
                             reward_scale = cfg.reward_scale,
                             reward_intercept = cfg.reward_intercept
-                        )
+                        ), cfg.domain
                     ), 
                     max_episode_steps = 100)
 
@@ -116,7 +118,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode=None)
-    env = TimeLimit(ResizeObservation(env,64), max_episode_steps = max_episode_steps)
+    env = TimeLimit(RewindWrapper(ResizeObservation(env,64), cfg.domain), max_episode_steps = max_episode_steps)
 
     eval_env =  gym.make(id=id, 
                         mode=cfg.mode, 
@@ -137,7 +139,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode='rgb_array')
-        sim_env = TimeLimit(RewindWrapper(ResizeObservation(sim_env,64)), max_episode_steps = max_episode_steps)
+        sim_env = TimeLimit(RewindWrapper(ResizeObservation(sim_env,64), cfg.domain), max_episode_steps = max_episode_steps)
 
     return env, eval_env, sim_env
 
@@ -346,8 +348,38 @@ def to_np(t):
         return t.cpu().detach().numpy()
 
 class RewindWrapper(gym.Wrapper):
-    def __init__(self, env):
+    def __init__(self, env, domain):
         super().__init__(env)
+
+        self.domain = domain
+
+    def get_state(self):
+        if self.domain == 'ALE':
+            return self.env.ale.cloneState()
+        elif self.domain == 'MiniGrid':
+            return self.env.get_state()
+        elif self.domain == 'BabyAI':
+            return self.env.get_state()
+        elif self.domain == 'Control':
+            return self.env.get_data()
+        elif self.domain == 'Box2D':
+            return self.env.get_state()
+        else:
+            print('You need to provide the get snapshot functionality of your environment')
+            raise NotImplementedError
+
     
-    def set_state(self, state):
-        self.env.state = state
+    def set_state(self, snapshot):
+        if self.domain == 'ALE':
+            self.env.ale.restoreState(snapshot)
+        elif self.domain == 'MiniGrid':
+            self.env.set_state()
+        elif self.domain == 'BabyAI':
+            self.env.set_state()
+        elif self.domain == 'Control':
+            self.env.set_state()
+        elif self.domain == 'Box2D':
+            self.env.set_state()
+        else:
+            print('You need to provide the set snapshot functionality of your environment')
+            raise NotImplementedError
