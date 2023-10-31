@@ -5,7 +5,8 @@ import imageio
 from torch import nn
 from moviepy.editor import VideoFileClip, clips_array
 from gymnasium.spaces import utils as gym_utils
-from captum.attr import DeepLift, IntegratedGradients, LRP
+from captum.attr import DeepLift, IntegratedGradients, LRP, Lime, DeepLiftShap, GradientShap,InputXGradient,GuidedBackprop
+from captum.attr import GuidedGradCam, Deconvolution, FeatureAblation, Occlusion, FeaturePermutation, ShapleyValueSampling, KernelShap
 from captum.attr._utils.lrp_rules import EpsilonRule
 from captum.attr._core.lrp import SUPPORTED_LAYERS_WITH_RULES
 from captum.attr._utils.visualization import visualize_image_attr
@@ -113,22 +114,60 @@ class Xplain:
         model.eval()
         model.zero_grad()
 
-        xai = DeepLift(model)
-        #xai = IntegratedGradients(model)
-        #xai = LRP(model)
+        print(model.cnn[4])
+        #xai = DeepLift(model) #scale factor zero
+        #xai = IntegratedGradients(model) #Works
+        #xai = LRP(model) #scale factor zero
+        #xai = Lime(model) #scale factor zero
+        #xai = DeepLiftShap(model) #needs baseline samples
+        #xai = GradientShap(model) #needs baseline samples
+        #xai = InputXGradient(model) #scale factor zero
+        #xai = GuidedBackprop(model) #scale factor zero
+        #xai = GuidedGradCam(model,model.cnn[4]) #scale factor zero
+        #xai = Deconvolution(model) #scale factor zero
+        #xai = FeatureAblation(model) #scale factor zero
+        #xai = Occlusion(model) #scale factor zero
+        #xai = ShapleyValueSampling(model) #too slow
+        #xai = FeaturePermutation(model) #needs multiple samples
+        xai = KernelShap(model) #Works
         
         xplain_flag = True
         plot_attrb = True
         mask = []
+        px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+        #feature_mask = torch.cat((torch.cat((torch.full((16,16,3), 0), torch.full((16,16,3), 4), torch.full((16,16,3), 8), torch.full((16,16,3), 12)),0),
+        #                         torch.cat((torch.full((16,16,3), 1), torch.full((16,16,3), 5), torch.full((16,16,3), 9), torch.full((16,16,3), 13)),0),
+        #                         torch.cat((torch.full((16,16,3), 2), torch.full((16,16,3), 6), torch.full((16,16,3), 10), torch.full((16,16,3), 14)),0),
+        #                         torch.cat((torch.full((16,16,3), 3), torch.full((16,16,3), 7), torch.full((16,16,3), 11), torch.full((16,16,3), 15)),0)),1)
+
         for ob, act, frm in zip(obs, actions, frames):
             attribution = xai.attribute(torch.tensor(ob).unsqueeze(0), 
-                                      target = int(act[0]),
-                                      additional_forward_args = (xplain_flag)).squeeze(0).cpu().detach().numpy()
-            
-            
+                                      target = int(act[0]), #feature_mask= feature_mask,
+                                      additional_forward_args = ([xplain_flag])).squeeze(0).cpu().detach().numpy()
             #print(attribution.shape)
-            mask.append((attribution).astype(np.uint8))
+            #print(ob.shape)
+            #print(frm.shape)
+            h, w, _ = attribution.shape
+            fig, ax = plt.subplots(figsize=(h*px, w*px))
+            fig, ax = visualize_image_attr(attr=attribution, 
+                                           original_image=ob, 
+                                           method='blended_heat_map', 
+                                           plt_fig_axis=(fig, ax), 
+                                           use_pyplot=False)
+            fig.tight_layout(pad=0)
+            canvas = fig.canvas
+            canvas.draw()
+            plt.close()
+            #width, height = canvas.get_width_height()
+            s, (width, height) = canvas.print_to_buffer()
+            image_array = np.fromstring(s, np.uint8).reshape((height, width, 4))
+            
+            #mask.append((attribution).astype(np.uint8))
+            mask.append((image_array))
+            
         
+        # print(fig)
+        # fig.savefig('Clips/fig')
         # Change actor back to train mode to continue training
         model.train()
 
