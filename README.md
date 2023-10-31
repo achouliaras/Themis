@@ -55,7 +55,7 @@ teacher_eps_skip: hyperparameters to control skip threshold (\in [0,1])
 teacher_eps_equal: hyperparameters to control equal threshold (\in [0,1])
 ```
 
-In B-Pref, we tried the following teachers:
+In B-Pref, there are the following teachers:
 
 `Oracle teacher`: (teacher_beta=-1, teacher_gamma=1, teacher_eps_mistake=0, teacher_eps_skip=0, teacher_eps_equal=0)
 
