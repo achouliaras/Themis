@@ -2,7 +2,10 @@ import numpy as np
 import os
 from pathlib import Path
 import imageio
+import datetime
+import time
 from torch import nn
+from torch.utils.data import Dataset, DataLoader
 from moviepy.editor import VideoFileClip, clips_array
 from gymnasium.spaces import utils as gym_utils
 from captum.attr import DeepLift, IntegratedGradients, LRP, Lime, DeepLiftShap, GradientShap,InputXGradient,GuidedBackprop
@@ -11,33 +14,58 @@ from captum.attr._utils.lrp_rules import EpsilonRule
 from captum.attr._core.lrp import SUPPORTED_LAYERS_WITH_RULES
 from captum.attr._utils.visualization import visualize_image_attr
 from captum.attr import visualization as viz
+from captum.influence import TracInCP, TracInCPFast, TracInCPFastRandProj
 import torch
-from torchsummary import summary
+#from torchsummary import summary
 import inspect
 import matplotlib.pyplot as plt
 SUPPORTED_LAYERS_WITH_RULES[nn.Flatten]= EpsilonRule
-
+from collections import Counter
 import sys
+
+def topK_indices(seq, k = None, idfun=None): 
+    # order preserving
+    if idfun is None:
+        def idfun(x): return x
+    seen = {}
+    result = []
+    for item in seq:
+        marker = idfun(item)
+        # in old Python versions:
+        # if seen.has_key(marker)
+        # but in new ones:
+        if marker in seen: continue
+        seen[marker] = 1
+        result.append(item)
+    if k == None:
+        return result
+    else:
+        return result[:k]
 
 class Xplain:
     def __init__(self, agent, action_type, 
                  xplain_action = True, 
-                 sample_states = False, 
+                 xplain_state = False, 
                  xplain_reward = False, 
-                 xplain_Qvalue= False) -> None:
+                 xplain_Qvalue= False,
+                 checkpoints_dir = None, 
+                 replay_buffer = None) -> None:
         self.agent = agent
         self.action_type = action_type
 
         # Set up which parts will be explained
         self.xplain_action = xplain_action
-        self.sample_states = sample_states
+        self.xplain_state = xplain_state
         self.xplain_reward = xplain_reward
         self.xplain_Qvalue = xplain_Qvalue
+        self.checkpoints_dir = checkpoints_dir
+        self.replay_buffer = replay_buffer
 
     def generate_frames(self, sa_t, env, seed, snaps, obs_space):
         # STATE Explanation could be added HERE
         flat_obs_dim = gym_utils.flatdim(obs_space)
-
+        if self.xplain_state:
+            replay_dataset = ReplayDataset(self.replay_buffer)
         clips =[]
         clips_raw=[]
         xclips = []
@@ -86,9 +114,12 @@ class Xplain:
                     xclip=self.saliency_map(obs, actions, frames)
                     xclips.append(xclip)
                     #print('XAI = ', len(xclip))
+            if self.xplain_state:
+                xclip=self.influential_states(obs, actions, frames, replay_dataset)
+                xclips.append(xclip)
         
-        print(f'Clips {len(clips)}')
-        print(f'Xclips {len(xclips)}')
+        #print(f'Clips {len(clips)}')
+        #print(f'Xclips {len(xclips)}')
         
         plot_attrb = False
         if(plot_attrb == True):
@@ -107,6 +138,67 @@ class Xplain:
 
         return clips, xclips #clips_raw
 
+    def checkpoints_load_func(self, net, path):
+        weights = torch.load(path)
+        net.load_state_dict(weights["model_state_dict"])
+        return 1.
+    
+    def influential_states(self, obs, actions, frames, replay_dataset):
+        model = self.agent.actor
+        model.eval()
+
+        #replay_dataset = DataLoader(dataset=replay_dataset, batch_size=500)
+
+        tracin_cp_fast = TracInCPFast(
+            model=model,
+            final_fc_layer=model.trunk[4],
+            train_dataset=replay_dataset,  #From Replay buffer
+            checkpoints=self.checkpoints_dir,
+            checkpoints_load_func=self.checkpoints_load_func,
+            loss_fn=nn.CrossEntropyLoss(reduction="sum"),
+            batch_size=500,
+            vectorize=False,
+        )
+        
+        k = 6
+        start_time = datetime.datetime.now()
+        
+        # Target or NN output dimension mismatch. No idea what is wrong.
+
+        proponents_indices, proponents_influence_scores = tracin_cp_fast.influence(
+            (torch.from_numpy(np.array(obs)), torch.tensor(np.array(actions).reshape(-1))), # dim 3-5 cant get it to 4. Maybe change all NN inputs to squeezed forms
+            k=k, 
+            proponents=True, 
+            show_progress= True
+        )
+
+        props_idx= proponents_indices.tolist()
+        props_idx = [item for sublist in props_idx for item in sublist]
+        #print(props_idx,'\n')
+        props_idx=sorted(props_idx, key=Counter(props_idx).get, reverse=True)
+        #print(props_idx,'\n')
+        top_props_idx = topK_indices(props_idx, k)
+        #print(top_props_idx,'\n')
+        h, w, c = obs[0].shape
+        blank = np.zeros(obs[0].shape, dtype=np.uint8)
+        window = 8
+        mask =[]
+        for i in top_props_idx:
+            if i-window >= 0 and i+window < len(replay_dataset):
+                mask.extend([replay_dataset[i+j][0] for j in range(-window,window+1)])
+            elif i-window < 0:
+                offset = window-i
+                mask.extend([replay_dataset[i+j][0] for j in range(offset-window, window+offset+1)])
+            elif i+window >= len(replay_dataset)-1:
+                offset = window-len(replay_dataset)+i
+                low = -window-offset
+                high = window-offset+1
+                mask.extend([replay_dataset[i+j][0] for j in range(low, high)])
+            mask.extend([blank, blank, blank])
+        #print('MASK LENGTH',len(mask))
+
+        return mask
+
     def saliency_map(self, obs, actions, frames):
         model = self.agent.actor
         action_dim = self.agent.actor_cfg.action_dim
@@ -114,9 +206,9 @@ class Xplain:
         model.eval()
         model.zero_grad()
 
-        print(model.cnn[4])
+        #print(model.trunk[4])
         #xai = DeepLift(model) #scale factor zero
-        #xai = IntegratedGradients(model) #Works
+        xai = IntegratedGradients(model) #Works
         #xai = LRP(model) #scale factor zero
         #xai = Lime(model) #scale factor zero
         #xai = DeepLiftShap(model) #needs baseline samples
@@ -129,9 +221,9 @@ class Xplain:
         #xai = Occlusion(model) #scale factor zero
         #xai = ShapleyValueSampling(model) #too slow
         #xai = FeaturePermutation(model) #needs multiple samples
-        xai = KernelShap(model) #Works
+        #xai = KernelShap(model) #Works
         
-        xplain_flag = True
+        no_xplain_flag = False
         plot_attrb = True
         mask = []
         px = 1/plt.rcParams['figure.dpi']  # pixel in inches
@@ -141,9 +233,9 @@ class Xplain:
         #                         torch.cat((torch.full((16,16,3), 3), torch.full((16,16,3), 7), torch.full((16,16,3), 11), torch.full((16,16,3), 15)),0)),1)
 
         for ob, act, frm in zip(obs, actions, frames):
-            attribution = xai.attribute(torch.tensor(ob).unsqueeze(0), 
-                                      target = int(act[0]), #feature_mask= feature_mask,
-                                      additional_forward_args = ([xplain_flag])).squeeze(0).cpu().detach().numpy()
+            attribution = xai.attribute(torch.tensor(ob).unsqueeze(0).to(self.agent.device), 
+                                      target = int(act[0])# , feature_mask= feature_mask,
+                                      ).squeeze(0).cpu().detach().numpy()
             #print(attribution.shape)
             #print(ob.shape)
             #print(frm.shape)
@@ -226,7 +318,8 @@ class Xplain:
     def generate_paired_clips(self, frames1, xframes1, frames2, xframes2, clipname='TestPairClip', format='mp4'):
         p = Path('Clips')
         p.mkdir(exist_ok=True)
-        fps = 5
+        fps = 6
+        xfps = 6
         scale = 256
         xflag = True if len(xframes1) + len(xframes2) > 0 else False
         kargs = { 'macro_block_size': None }
@@ -243,7 +336,7 @@ class Xplain:
             for i, xclip1 in enumerate(xframes1):
                 filename = f'TESTxclip1_{i}.mp4'
                 with open(p / filename, 'wb') as file1:
-                    imageio.mimsave(p / filename, xclip1, fps=fps)
+                    imageio.mimsave(p / filename, xclip1, fps=xfps)
                 xclips1.append(VideoFileClip(str(p / filename)).margin(10).resize((scale, scale)))
 
         clips2=[]
@@ -258,7 +351,7 @@ class Xplain:
             for i, xclip2 in enumerate(xframes2):
                 filename = f'TESTxclip2_{i}.mp4'
                 with open(p / filename, 'wb') as file2:
-                    imageio.mimsave(p / filename, xclip2, fps=fps)
+                    imageio.mimsave(p / filename, xclip2, fps=xfps)
                 xclips2.append(VideoFileClip(str(p / filename)).margin(10).resize((scale, scale)))
 
         if xflag:
@@ -327,3 +420,20 @@ class Xplain:
             else:
                 print('Wrong input. Try again') 
         return labels
+    
+class ReplayDataset(Dataset):
+        def __init__(self, replay_buffer):
+            self.idx = replay_buffer.capacity if replay_buffer.full else replay_buffer.idx
+
+            self.states = np.copy(replay_buffer.obses[:self.idx])
+            self.actions = np.copy(replay_buffer.actions[:self.idx])
+    
+        def __len__(self):
+            return len(self.states)
+        
+        def __getitem__(self, idx):
+            state, action = self.states[idx], self.actions[idx][0]
+            state = torch.from_numpy(state)
+            #action = torch.tensor(action)
+            #print('Action is: ', action)
+            return state, action

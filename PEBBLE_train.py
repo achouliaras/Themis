@@ -19,11 +19,14 @@ from lib.replay_buffer import ReplayBuffer
 from lib.reward_model import RewardModel
 from collections import deque
 
+import logging
 import lib.utils as utils
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from gymnasium.spaces import utils as gym_utils
-from lib.human_interface import Xplain
+from lib.human_interface import Xplain, ReplayDataset
+
+log = logging.getLogger()
 
 class Workspace(object):
     def __init__(self, cfg, work_dir):
@@ -32,6 +35,11 @@ class Workspace(object):
 
         snapshot_dir = cfg.snapshot_dir
         snapshot = snapshot_dir / f'snapshot_{(cfg.num_seed_steps + cfg.num_unsup_steps)*cfg.action_repeat}.pt'
+        
+        folder = work_dir / cfg.checkpoints_dir    
+        folder.mkdir(exist_ok=True, parents=True)
+        self.checkpoints_dir = cfg.checkpoints_dir
+        
         self.cfg = cfg
         self.logger = Logger(
             self.work_dir,
@@ -50,6 +58,7 @@ class Workspace(object):
 
             # Setup Agent
             self.action_type = 'Cont'
+            self.state_type = 'tabular'
             self.policy = 'MLP'
             self.mode = 0
             self.obs_space = self.env.observation_space
@@ -85,18 +94,17 @@ class Workspace(object):
             
             action_space = [1]
             cfg.agent.obs_dim = self.obs_space_shape
-            
             cfg.agent.action_dim = int(self.env.action_space.n)
             cfg.agent.batch_size = 256
             cfg.agent.action_range = [0,1]
-            critic_cfg = cfg.double_q_critic,
-            actor_cfg = cfg.categorical_actor,
+            critic_cfg = cfg.double_q_critic
+            actor_cfg = cfg.categorical_actor
         
-            critic_cfg[0].action_type = self.action_type
-            critic_cfg[0].policy = self.policy
+            critic_cfg.action_type = self.action_type
+            critic_cfg.policy = self.policy
 
-            actor_cfg[0].action_type = self.action_type
-            actor_cfg[0].policy = self.policy
+            actor_cfg.action_type = self.action_type
+            actor_cfg.policy = self.policy
         elif 'Box2D' in cfg.domain:
             self.env, self.eval_env, self.sim_env = utils.make_box2d_env(cfg, cfg.render_mode)
             self.log_success = True
@@ -105,7 +113,7 @@ class Workspace(object):
             self.log_success = True
 
             self.action_type = 'Discrete'
-            self.state_type = 'pixel'
+            self.state_type = 'pixel-grid'
             self.policy = 'CNN'
             self.mode = 0
             self.obs_space = self.env.observation_space 
@@ -117,14 +125,14 @@ class Workspace(object):
             cfg.agent.action_dim = int(self.env.action_space.n)
             cfg.agent.batch_size = 256
             cfg.agent.action_range = [0,1]
-            critic_cfg = cfg.double_q_critic,
-            actor_cfg = cfg.categorical_actor,
-        
-            critic_cfg[0].action_type = self.action_type
-            critic_cfg[0].policy = self.policy
+            critic_cfg = cfg.double_q_critic
+            actor_cfg = cfg.categorical_actor
+            
+            critic_cfg.action_type = self.action_type
+            critic_cfg.policy = self.policy
 
-            actor_cfg[0].action_type = self.action_type
-            actor_cfg[0].policy = self.policy
+            actor_cfg.action_type = self.action_type
+            actor_cfg.policy = self.policy
         else:
             raise NotImplementedError
         
@@ -138,8 +146,8 @@ class Workspace(object):
             action_dim = cfg.agent.action_dim, 
             action_range = cfg.agent.action_range, 
             device = cfg.agent.device, 
-            critic_cfg = critic_cfg[0],
-            actor_cfg = actor_cfg[0], 
+            critic_cfg = critic_cfg,
+            actor_cfg = actor_cfg, 
             discount = cfg.agent.discount, 
             init_temperature = cfg.agent.init_temperature, 
             alpha_lr = cfg.agent.alpha_lr, 
@@ -159,7 +167,12 @@ class Workspace(object):
         
         self.agent.load(snapshot_dir, self.global_frame)
         
-        ui_module= Xplain(self.agent, self.action_type)
+        ui_module= Xplain(self.agent, 
+                          self.action_type, 
+                          xplain_action = cfg.xplain_action, 
+                          xplain_state = cfg.xplain_state,
+                          checkpoints_dir = self.checkpoints_dir,
+                          replay_buffer = self.replay_buffer)
 
         # for logging
         self.start_step=self.step
@@ -167,32 +180,33 @@ class Workspace(object):
         self.labeled_feedback = 0
         self.interactions=0
         
-        # instantiating the reward model
-        self.reward_model = RewardModel(
-            obs_space=self.obs_space,
-            ds=gym_utils.flatdim(self.obs_space),
-            da=action_space[0],
-            action_type=self.action_type,
-            ensemble_size=cfg.ensemble_size,
-            size_segment=cfg.segment,
-            env = self.sim_env,
-            activation=cfg.activation, 
-            capacity=cfg.reward_model_capacity,
-            lr=cfg.reward_lr,
-            mb_size=cfg.reward_batch, 
-            large_batch=cfg.large_batch, 
-            label_margin=cfg.label_margin,
-            reward_scale=cfg.reward_scale, 
-            reward_intercept=cfg.reward_intercept,
-            human_teacher = cfg.human_teacher, 
-            teacher_beta=cfg.teacher_beta, 
-            teacher_gamma=cfg.teacher_gamma, 
-            teacher_eps_mistake=cfg.teacher_eps_mistake, 
-            teacher_eps_skip=cfg.teacher_eps_skip, 
-            teacher_eps_equal=cfg.teacher_eps_equal,
-            ui_module=ui_module)
+        if cfg.learn_reward == True:
+            # instantiating the reward model
+            self.reward_model = RewardModel(
+                obs_space=self.obs_space,
+                ds=gym_utils.flatdim(self.obs_space),
+                da=action_space[0],
+                action_type=self.action_type,
+                ensemble_size=cfg.ensemble_size,
+                size_segment=cfg.segment,
+                env = self.sim_env,
+                activation=cfg.activation, 
+                capacity=cfg.reward_model_capacity,
+                lr=cfg.reward_lr,
+                mb_size=cfg.reward_batch, 
+                large_batch=cfg.large_batch, 
+                label_margin=cfg.label_margin,
+                reward_scale=cfg.reward_scale, 
+                reward_intercept=cfg.reward_intercept,
+                human_teacher = cfg.human_teacher, 
+                teacher_beta=cfg.teacher_beta, 
+                teacher_gamma=cfg.teacher_gamma, 
+                teacher_eps_mistake=cfg.teacher_eps_mistake, 
+                teacher_eps_skip=cfg.teacher_eps_skip, 
+                teacher_eps_equal=cfg.teacher_eps_equal,
+                ui_module=ui_module)
         
-        self.reward_model.load(snapshot_dir, self.global_frame)
+            self.reward_model.load(snapshot_dir, self.global_frame)
         
         print('INIT COMPLETE')
         print('Models Restored')
@@ -216,8 +230,9 @@ class Workspace(object):
         
         for episode in range(self.cfg.num_eval_episodes):
             obs, info = self.eval_env.reset(seed = self.cfg.seed)
-            if self.action_type == 'Discrete' and  self.state_type == 'grid':
-                obs = obs['image']
+            # Add if minigrid has grid state
+            # if self.action_type == 'Discrete' and  self.state_type == 'grid': 
+            #     obs = obs['image']
             self.agent.reset()
             terminated = False
             truncated = False
@@ -228,7 +243,7 @@ class Workspace(object):
 
             while not (terminated or truncated):
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=False, determ=False) # set determ=True in experiments
+                    action = self.agent.act(obs, sample=False, determ=False)
 
                 obs, reward, terminated, truncated, info = self.eval_env.step(action)
                 
@@ -236,8 +251,9 @@ class Workspace(object):
                 true_episode_reward += reward
                 if self.log_success:
                     episode_success = max(episode_success, terminated)
-                if self.action_type == 'Discrete' and  self.state_type == 'grid':
-                    obs = obs['image']
+                # Add if minigrid has grid state
+                # if self.action_type == 'Discrete' and  self.state_type == 'grid': 
+                #     obs = obs['image']
                 
             average_episode_reward += episode_reward
             average_true_episode_reward += true_episode_reward
@@ -341,8 +357,9 @@ class Workspace(object):
                 obs, info = self.env.reset(seed = self.cfg.seed)
 
                 #print(obs[0,0,0].dtype)
-                if self.action_type == 'Discrete' and  self.state_type == 'grid':
-                    obs = obs['image']
+                # Add if minigrid has grid state
+                # if self.action_type == 'Discrete' and  self.state_type == 'grid': 
+                #     obs = obs['image']
 
                 self.agent.reset()
                 terminated = False
@@ -359,104 +376,144 @@ class Workspace(object):
 
             # sample action for data collection
             if self.step < self.cfg.num_seed_steps:
-                # Action is a vector of floats
-                action = self.env.action_space.sample()
+                if self.action_type == 'Discrete':
+                    # Action is a vector of floats
+                    action = self.env.action_space.sample()
+                else:
+                    action = self.agent.act(obs, sample=True, determ=False)
             else:
                 with utils.eval_mode(self.agent):
                     # Action is a vector of flat integer
-                    action = self.agent.act(obs, sample=True, determ=False) # set determ=True in experiments
+                    action = self.agent.act(obs, sample=False, determ=False) # Sample from the action distribution
+                print(action)
 
             # run training update (until the end)
-            if self.step > (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
-                # update reward function
-                if self.total_feedback < self.cfg.max_feedback:
-                    if interact_count == self.cfg.num_interact:
-                        # update schedule
-                        if self.cfg.reward_schedule == 1:
-                            frac = (self.cfg.num_train_steps-self.step) / self.cfg.num_train_steps
-                            if frac == 0:
-                                frac = 0.01
-                        elif self.cfg.reward_schedule == 2:
-                            frac = self.cfg.num_train_steps / (self.cfg.num_train_steps-self.step +1)
-                        else:
-                            frac = 1
-                        self.reward_model.change_batch(frac)
-                        
-                        # update margin --> not necessary / will be updated soon
-                        new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
-                        self.reward_model.set_teacher_thres_skip(new_margin * self.cfg.teacher_eps_skip)
-                        self.reward_model.set_teacher_thres_equal(new_margin * self.cfg.teacher_eps_equal)
-                        
-                        # corner case: new total feed > max feed
-                        if self.reward_model.mb_size + self.total_feedback > self.cfg.max_feedback:
-                            self.reward_model.set_batch(self.cfg.max_feedback - self.total_feedback)
+            if self.step >= (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
+                # Check if reward model is used
+                if self.cfg.learn_reward == True:
+                    # update reward function
+                    if self.total_feedback < self.cfg.max_feedback:
+                        if interact_count == self.cfg.num_interact:
+                            # update schedule
+                            if self.cfg.reward_schedule == 1:
+                                frac = (self.cfg.num_train_steps-self.step) / self.cfg.num_train_steps
+                                if frac == 0:
+                                    frac = 0.01
+                            elif self.cfg.reward_schedule == 2:
+                                frac = self.cfg.num_train_steps / (self.cfg.num_train_steps-self.step +1)
+                            else:
+                                frac = 1
+                            self.reward_model.change_batch(frac)
                             
-                        self.learn_reward()
-                        self.replay_buffer.relabel_with_predictor(self.reward_model)
-                        interact_count = 0
+                            # update margin --> not necessary / will be updated soon
+                            new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
+                            self.reward_model.set_teacher_thres_skip(new_margin * self.cfg.teacher_eps_skip)
+                            self.reward_model.set_teacher_thres_equal(new_margin * self.cfg.teacher_eps_equal)
+                            
+                            # corner case: new total feed > max feed
+                            if self.reward_model.mb_size + self.total_feedback > self.cfg.max_feedback:
+                                self.reward_model.set_batch(self.cfg.max_feedback - self.total_feedback)
+                                
+                            self.learn_reward()
+                            self.replay_buffer.relabel_with_predictor(self.reward_model)
+                            interact_count = 0
                         
                 self.agent.update(self.replay_buffer, self.logger, self.step, 1)
 
             # run training update (at the end of the unsupervised phase)
-            elif self.step == (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
-                # update schedule
-                if self.cfg.reward_schedule == 1:
-                    frac = (self.cfg.num_train_steps-self.step) / self.cfg.num_train_steps
-                    if frac == 0:
-                        frac = 0.01
-                elif self.cfg.reward_schedule == 2:
-                    frac = self.cfg.num_train_steps / (self.cfg.num_train_steps-self.step +1)
-                else:
-                    frac = 1
-                self.reward_model.change_batch(frac)
-                # update margin --> not necessary / will be updated soon
-                #new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
-                #self.reward_model.set_teacher_thres_skip(new_margin)
-                #self.reward_model.set_teacher_thres_equal(new_margin)
+            # elif self.step == (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
+            #     # Check if reward model is used
+            #     if self.cfg.learn_reward == True:
+
+            #         # update schedule
+            #         if self.cfg.reward_schedule == 1:
+            #             frac = (self.cfg.num_train_steps-self.step) / self.cfg.num_train_steps
+            #             if frac == 0:
+            #                 frac = 0.01
+            #         elif self.cfg.reward_schedule == 2:
+            #             frac = self.cfg.num_train_steps / (self.cfg.num_train_steps-self.step +1)
+            #         else:
+            #             frac = 1
+            #         self.reward_model.change_batch(frac)
+            #         # update margin --> not necessary / will be updated soon
+            #         #new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
+            #         #self.reward_model.set_teacher_thres_skip(new_margin)
+            #         #self.reward_model.set_teacher_thres_equal(new_margin)
+                    
+            #         # first learn reward
+            #         self.learn_reward(first_flag=1)
+                    
+            #         # relabel buffer
+            #         self.replay_buffer.relabel_with_predictor(self.reward_model)
+
+            #         # reset interact_count
+            #         interact_count = 0
                 
-                # first learn reward
-                self.learn_reward(first_flag=1)
+            #     # reset Q due to unsuperivsed exploration
+            #     self.agent.reset_critic()
                 
-                # relabel buffer
-                self.replay_buffer.relabel_with_predictor(self.reward_model)
-                
-                # reset Q due to unsuperivsed exploration
-                self.agent.reset_critic()
-                
-                # update agent
-                self.agent.update_after_reset(
-                    self.replay_buffer, self.logger, self.step, 
-                    gradient_update=self.cfg.reset_update, 
-                    policy_update=True)
-                
-                # reset interact_count
-                interact_count = 0
-  
-            snapshot = self.env.get_state()
+            #     # update agent
+            #     self.agent.update_after_reset(
+            #         self.replay_buffer, self.logger, self.step, 
+            #         gradient_update=self.cfg.gradient_update, 
+            #         policy_update=True)
+            
+            # For State Explanation
+            if self.state_type == 'grid' or self.state_type == 'tabular':
+                env_snapshot = [] # Not yet supported
+            elif self.state_type == 'grid':
+                env_snapshot = [] # Not yet supported
+            elif self.state_type == 'pixels':
+                env_snapshot = self.env.get_state()
+            else:
+                env_snapshot = [] # Not yet supported
+
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
             if self.action_type == 'Discrete':
                 # if obs space contains more that an image
+                # Add if minigrid has grid state
                 next_obs = next_obs['image'] if self.state_type == 'grid' else next_obs
                 # Convert action to int as the obs space
                 action = np.array([action], dtype=np.uint8)
             
             obs_flat = gym_utils.flatten(self.obs_space,obs)
 
-            reward_hat = self.reward_model.r_hat(np.concatenate([obs_flat, action], axis=-1))
+            # Check if reward model is used
+            if self.cfg.learn_reward == True:
+                reward_hat = self.reward_model.r_hat(np.concatenate([obs_flat, action], axis=-1))
 
             # allow infinite bootstrap
             terminated = float(terminated)
-            episode_reward += reward_hat
+            # Check if reward model is used
+            if self.cfg.learn_reward == True:
+                episode_reward += reward_hat
+            else:
+                episode_reward += reward
             true_episode_reward += reward
             
             if self.log_success:
                 episode_success = max(episode_success, terminated)
             
-            # adding data to the reward training data
-            self.reward_model.add_data(obs, action, reward, terminated, truncated, snapshot)
-            self.replay_buffer.add(obs, action, reward_hat, next_obs, terminated, truncated)
+            # Check if reward model is used
+            if self.cfg.learn_reward == True:
+                # adding data to the reward training data
+                self.reward_model.add_data(obs, action, reward, terminated, truncated, env_snapshot)
+                self.replay_buffer.add(obs, action, reward_hat, next_obs, terminated, truncated)
+            else:
+                self.replay_buffer.add(obs, action, reward, next_obs, terminated, truncated)
 
+            # Save model checkpoint
+            if self.cfg.checkpoint_frec > 0 and self.step % self.cfg.checkpoint_frec == 0:
+                checkpoint_name = "-".join(["checkpoint", str(self.step) + ".pt"])
+                torch.save(
+                    {
+                        "epoch": self.step,
+                        "model_state_dict": self.agent.actor.state_dict(),
+                        "optimizer_state_dict": self.agent.actor_optimizer.state_dict()
+                    },
+                    os.path.join(self.checkpoints_dir, checkpoint_name),
+                )
             obs = next_obs
             episode_step += 1
             self.step += 1
@@ -467,7 +524,9 @@ class Workspace(object):
         snapshot = snapshot_dir / f'snapshot_{self.global_frame}.pt'
         snapshot_dir.mkdir(exist_ok=True, parents=True)
         self.agent.save(snapshot_dir, self.global_frame)
-        self.reward_model.save(snapshot_dir, self.global_frame)
+        # Check if reward model is used
+        if self.cfg.learn_reward == True:
+            self.reward_model.save(snapshot_dir, self.global_frame)
         keys_to_save = ['replay_buffer', 'step', 'episode']
         payload = {k: self.__dict__[k] for k in keys_to_save}
         torch.save(payload, snapshot, pickle_protocol=4)

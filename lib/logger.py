@@ -111,7 +111,7 @@ class MetersGroup(object):
 
     def _dump_to_console(self, data, prefix):
         prefix = colored(prefix, 'yellow' if prefix == 'train' else 'green')
-        pieces = [f' |{prefix: <14}']
+        pieces = [f' |{prefix: <6}']
         for key, disp_key, ty in self._formating:
             value = data.get(key, 0)
             pieces.append(self._format(disp_key, value, ty))

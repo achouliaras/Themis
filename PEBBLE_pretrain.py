@@ -84,14 +84,14 @@ class Workspace(object):
             cfg.agent.action_dim = int(self.env.action_space.n)
             cfg.agent.batch_size = 256
             cfg.agent.action_range = [0,1]
-            critic_cfg = cfg.double_q_critic,
-            actor_cfg = cfg.categorical_actor,
-        
-            critic_cfg[0].action_type = self.action_type
-            critic_cfg[0].policy = self.policy
+            critic_cfg = cfg.double_q_critic
+            actor_cfg = cfg.categorical_actor
+            
+            critic_cfg.action_type = self.action_type
+            critic_cfg.policy = self.policy
 
-            actor_cfg[0].action_type = self.action_type
-            actor_cfg[0].policy = self.policy
+            actor_cfg.action_type = self.action_type
+            actor_cfg.policy = self.policy
         elif 'Box2D' in cfg.domain:
             self.env, self.eval_env, self.sim_env = utils.make_box2d_env(cfg, cfg.render_mode)
             self.log_success = True
@@ -100,7 +100,7 @@ class Workspace(object):
             self.log_success = True
 
             self.action_type = 'Discrete'
-            self.state_type = 'pixel'
+            self.state_type = 'pixel-grid'
             self.policy = 'CNN'
             self.mode = 0
             self.obs_space = self.env.observation_space 
@@ -114,12 +114,12 @@ class Workspace(object):
             cfg.agent.action_range = [0,1]
             critic_cfg = cfg.double_q_critic
             actor_cfg = cfg.categorical_actor
-        
-            critic_cfg[0].action_type = self.action_type
-            critic_cfg[0].policy = self.policy
+            
+            critic_cfg.action_type = self.action_type
+            critic_cfg.policy = self.policy
 
-            actor_cfg[0].action_type = self.action_type
-            actor_cfg[0].policy = self.policy
+            actor_cfg.action_type = self.action_type
+            actor_cfg.policy = self.policy
         else:
             raise NotImplementedError
         
@@ -129,8 +129,8 @@ class Workspace(object):
             action_dim = cfg.agent.action_dim, 
             action_range = cfg.agent.action_range, 
             device = cfg.agent.device, 
-            critic_cfg = critic_cfg[0],
-            actor_cfg = actor_cfg[0], 
+            critic_cfg = critic_cfg,
+            actor_cfg = actor_cfg, 
             discount = cfg.agent.discount, 
             init_temperature = cfg.agent.init_temperature, 
             alpha_lr = cfg.agent.alpha_lr, 
@@ -297,17 +297,30 @@ class Workspace(object):
 
             # sample action for data collection
             if self.step < self.cfg.num_seed_steps:
-                action = self.env.action_space.sample()
+                if self.action_type == 'Discrete':
+                    action = self.env.action_space.sample()
+                else:
+                    action = self.agent.act(obs, sample=True, determ=False)
             else:
-                with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=True, determ=False) # set determ=True in experiments
+                #with utils.eval_mode(self.agent):
+                action = self.agent.act(obs, sample=False, determ=False) # set determ=True in experiments
 
             # unsupervised exploration
             if self.step > self.cfg.num_seed_steps:
                 self.agent.update_state_ent(self.replay_buffer, self.logger, self.step, gradient_update=1, K=self.cfg.topK)
                 #print('OK')
                 
-            snapshot = self.env.get_state()
+            
+            # For State Explanation
+            if self.state_type == 'grid' or self.state_type == 'tabular':
+                env_snapshot = [] # Not yet supported
+            elif self.state_type == 'grid':
+                env_snapshot = [] # Not yet supported
+            elif self.state_type == 'pixels':
+                env_snapshot = self.env.get_state()
+            else:
+                env_snapshot = [] # Not yet supported
+
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
             if self.action_type == 'Discrete':
@@ -327,7 +340,7 @@ class Workspace(object):
                 episode_success = max(episode_success, terminated)
                 
             # adding data to the reward training data
-            self.reward_model.add_data(obs_flat, action, reward, terminated, truncated, snapshot)
+            self.reward_model.add_data(obs_flat, action, reward, terminated, truncated, env_snapshot)
             self.replay_buffer.add(obs, action, reward_hat, next_obs, terminated, truncated)
 
             obs = next_obs

@@ -3,20 +3,23 @@ defaults:
     - sac
     
 # this needs to be specified manually
-experiment: PEBBLE
+experiment: THEMIS
+
+# unsup training
+gradient_update: 1
+num_unsup_steps: 9000 #5000
+topK: 5
 
 # reward learning
-segment: 50
+learn_reward: True
+segment: 120 #50
 activation: leaky_relu
 num_seed_steps: 1000 #1000
-num_unsup_steps: 5000 #5000
-num_interact: 5000
+num_interact: 4000
 reward_lr: 0.0003
 reward_batch: 128
 reward_update: 200
 feed_type: 0
-reset_update: 100
-topK: 5
 ensemble_size: 3
 max_feedback: 1400
 large_batch: 10
@@ -58,18 +61,23 @@ domain: Control
 env: Ant-v4
 render_mode: None
 #max_episode_steps: 100
-gradient_update: 1
 
 #Atari Settings
-obs_type: rgb # [states, pixels]
+obs_type: rgb # [rgb, ram, greyscale]
 frame_stack: 4 # only works if obs_type=pixels
 frameskip: 4
 action_repeat: 1 # set to 2 for pixels
-mode :
-difficulty :
+mode : 0
+difficulty : 0
 repeat_action_probability: 0.25
-full_action_space:
+full_action_space: False
+
+#Xplain Params
+checkpoint_frec: 500 # No. of steps
+checkpoints_dir: checkpoints/${obs_type}/${env}/sac/
+xplain_action: False
+xplain_state: True
 
 # Snapshot
-snapshots: [100000, 500000, 1000000, 2000000]
+#snapshots: [100000, 500000, 1000000, 2000000]
 snapshot_dir: models/${obs_type}/${env}/sac/

@@ -25,7 +25,7 @@ class DoubleQCritic(nn.Module):
             self.Q2 = utils.mlp(obs_dim, hidden_dim, action_dim, hidden_depth)
 
         self.outputs = dict()
-        self.apply(utils.weight_init)
+        #self.apply(utils.weight_init)
 
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0)

@@ -9,6 +9,7 @@ import hydra
 from agent import Agent
 from agent.critic import DoubleQCritic
 from agent.actor import DiagGaussianActor, CategoricalActor
+from stable_baselines3.common.distributions import CategoricalDistribution
 
 def compute_state_entropy(obs, full_obs, k, action_type):
     batch_size = 100
@@ -80,7 +81,8 @@ class SACAgent(Agent):
         self.log_alpha.requires_grad = True
         
         # set target entropy to -|A|
-        self.target_entropy = -action_dim
+        #self.target_entropy = -action_dim
+        self.target_entropy =  -np.log((1.0 / action_dim)) * 0.98
 
         # optimizers
         self.actor_optimizer = torch.optim.Adam(
@@ -98,7 +100,9 @@ class SACAgent(Agent):
         
         # change mode
         self.train()
-        self.critic_target.train()
+        # self.actor.train()
+        # self.critic.train()
+        # self.critic_target.train()
     
     def create_critic(self):
         critic = DoubleQCritic(obs_space = self.obs_space, 
@@ -131,6 +135,7 @@ class SACAgent(Agent):
                 hidden_depth = self.actor_cfg.hidden_depth,
                 log_std_bounds = self.actor_cfg.log_std_bounds,
                 mode= self.mode).to(self.device)
+            self.categorical = CategoricalDistribution(self.actor_cfg.action_dim)
         return actor
     
     def reset_critic(self):
@@ -170,10 +175,10 @@ class SACAgent(Agent):
     def alpha(self):
         return self.log_alpha.exp()
 
-    def act(self, obs, sample=False, determ=True):
+    def act(self, obs, sample=False, determ=False):
         obs = torch.FloatTensor(obs).to(self.device)
         obs = obs.unsqueeze(0)
-        dist = self.actor(obs)
+        dist = self.actor.forward(obs)
         if self.action_type == 'Cont':
             # Action is a vector of float numbers
             action = dist.sample() if sample else dist.mean         
@@ -182,30 +187,48 @@ class SACAgent(Agent):
             return utils.to_np(action[0])
         elif self.action_type == 'Discrete':
             # Action is a flat integer
-            action = dist.get_actions(deterministic=determ)
+            dist = self.categorical.proba_distribution(action_logits=dist)
+            action = dist.get_actions(deterministic=False)
             return utils.to_np(action[0])
 
     def update_critic(self, obs, action, reward, next_obs, 
                       not_done, logger, step, print_flag=True):
         
-        dist = self.actor(next_obs)
-        #print('Here')
+        output = self.actor.forward(next_obs)
         if self.action_type == 'Cont':
+            dist = output
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+
+            target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
+            target_V = torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_prob
+            
+            target_Q = reward + (not_done * self.discount * target_V)
+            target_Q = target_Q.detach()
         elif self.action_type == 'Discrete':
-            next_action = dist.get_actions(deterministic=True)
-            log_prob = dist.distribution.logits.sum(0, keepdim=True)
-        
-        target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
-        target_V = torch.min(target_Q1,
-                             target_Q2) - self.alpha.detach() * log_prob
-        target_Q = reward + (not_done * self.discount * target_V)
-        target_Q = target_Q.detach()
+            action_probs = output
+            next_action = self.categorical.actions_from_params(action_logits=output)
+            z = action_probs == 0.0
+            z = z.float() * 1e-8
+            log_prob = torch.log(action_probs + z)
+            
+            #print(action_probs)
+            target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
+            target_V = action_probs * (torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_prob)
+            target_V = target_V.sum(1).unsqueeze(-1)
+            target_Q = reward + (not_done * self.discount * target_V)
+            target_Q = target_Q.detach()
 
         # get current Q estimates
         current_Q1, current_Q2 = self.critic(obs, action)
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q) # FIX based on All Q-values
+        current_Q1 = current_Q1.gather(1, action.long())
+        current_Q2 = current_Q2.gather(1, action.long())
+        
+        qf1_loss = F.mse_loss(current_Q1, target_Q)
+        qf2_loss = F.mse_loss(current_Q2, target_Q)
+        # print('qf1_loss',qf1_loss)
+        # print('qf2_loss',qf2_loss)
+        critic_loss =  qf1_loss + qf2_loss # FIX based on All Q-values
         # Use action to take the suitable Q value
         
         if print_flag:
@@ -213,7 +236,8 @@ class SACAgent(Agent):
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
-        critic_loss.backward()
+        qf1_loss.backward(retain_graph=True)
+        qf2_loss.backward(retain_graph=True)
         self.critic_optimizer.step()
         self.critic.log(logger, step)
         
@@ -221,11 +245,12 @@ class SACAgent(Agent):
         self, obs, full_obs, action, next_obs, not_done, logger,
         step, K=5, print_flag=True):
         
-        dist = self.actor(next_obs)
+        dist = self.actor.forward(next_obs)
         if self.action_type == 'Cont':
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
         elif self.action_type == 'Discrete':
+            dist = self.categorical.proba_distribution(action_logits=dist)
             next_action = dist.get_actions(deterministic=True)
             log_prob = dist.distribution.logits.sum(0, keepdim=True)
         
@@ -295,18 +320,29 @@ class SACAgent(Agent):
         )
     
     def update_actor_and_alpha(self, obs, logger, step, print_flag=False):
-        dist = self.actor(obs)
+        output = self.actor.forward(obs)
         if self.action_type == 'Cont':
+            dist = output
             action = dist.rsample()
             log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        elif self.action_type == 'Discrete':
-            action = dist.get_actions(deterministic=True)
-            log_prob = dist.distribution.logits.sum(0, keepdim=True)
-        
-        actor_Q1, actor_Q2 = self.critic(obs, action)
 
-        actor_Q = torch.min(actor_Q1, actor_Q2)
-        actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()
+            actor_Q1, actor_Q2 = self.critic(obs, action)
+            actor_Q = torch.min(actor_Q1, actor_Q2)
+            actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()
+        elif self.action_type == 'Discrete':
+            action_probs = output
+            action = self.categorical.actions_from_params(action_logits=output)
+            z = action_probs == 0.0
+            z = z.float() * 1e-8
+            log_prob = torch.log(action_probs + z)
+            
+            actor_Q1, actor_Q2 = self.critic(obs, action)
+            actor_Q = torch.min(actor_Q1, actor_Q2)
+            inside_term = (self.alpha.detach() * log_prob) - actor_Q
+            actor_loss = (action_probs*inside_term).sum(dim=1).mean()
+            log_prob = torch.sum(log_prob * action_probs, dim=1)        # CHECK AGAIN
+            print('actor_loss', actor_loss)
+            
         if print_flag:
             logger.log('train_actor/loss', actor_loss, step)
             logger.log('train_actor/target_entropy', self.target_entropy, step)
@@ -321,8 +357,8 @@ class SACAgent(Agent):
 
         if self.learnable_temperature:
             self.log_alpha_optimizer.zero_grad()
-            alpha_loss = (self.alpha *
-                          (-log_prob - self.target_entropy).detach()).mean()
+            alpha_loss = -(self.alpha * 
+                          (log_prob + self.target_entropy).detach()).mean()
             if print_flag:
                 logger.log('train_alpha/loss', alpha_loss, step)
                 logger.log('train_alpha/value', self.alpha, step)
