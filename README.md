@@ -1,4 +1,7 @@
 ![alt text](https://github.com/achouliaras/Themis/blob/main/logo.png)
+
+Themis is an open-source testing & evaluation framework for Reinforcement Learning experiments using PyTorch. It supports many famous environments and can automatically set up the RL algorithm for continuous or discrete action spaces with minimal intervention from the user. You can specify Themis to train a reward model from human preferences making it ideal for experiments with interactive nature. It is also designed with explainability in mind and offers 3 ready-to-play methods from Captum.
+
 ## Install the following modules to use Themis
 
 ```
