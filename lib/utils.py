@@ -105,6 +105,7 @@ def make_minigrid_env(cfg, render_mode=None):
     return env, eval_env, sim_env
 
 def make_atari_env(cfg, render_mode=None):
+    gym.logger.set_level(40)
     env = eval_env = sim_env = None
     #Helper function to create Atari environment
     id=cfg.domain+'/'+cfg.env

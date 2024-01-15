@@ -23,6 +23,8 @@ SUPPORTED_LAYERS_WITH_RULES[nn.Flatten]= EpsilonRule
 from collections import Counter
 import sys
 
+DEBUG_BATCH_SIZE=2
+
 def topK_indices(seq, k = None, idfun=None): 
     # order preserving
     if idfun is None:
@@ -49,7 +51,8 @@ class Xplain:
                  xplain_reward = False, 
                  xplain_Qvalue= False,
                  checkpoints_dir = None, 
-                 replay_buffer = None) -> None:
+                 replay_buffer = None, 
+                 debug = False) -> None:
         self.agent = agent
         self.action_type = action_type
 
@@ -60,6 +63,7 @@ class Xplain:
         self.xplain_Qvalue = xplain_Qvalue
         self.checkpoints_dir = checkpoints_dir
         self.replay_buffer = replay_buffer
+        self.debug = debug
 
     def generate_frames(self, sa_t, env, seed, snaps, obs_space):
         # STATE Explanation could be added HERE
@@ -72,6 +76,9 @@ class Xplain:
         
         #print(f'SA_T: {sa_t.shape}')
         for i, roll  in enumerate(sa_t):
+            if self.debug and i==DEBUG_BATCH_SIZE:
+                break
+
             #print(obs_space.dtype)
             obs = []
             actions = []

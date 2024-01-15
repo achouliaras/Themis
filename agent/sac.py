@@ -226,9 +226,8 @@ class SACAgent(Agent):
         
         qf1_loss = F.mse_loss(current_Q1, target_Q)
         qf2_loss = F.mse_loss(current_Q2, target_Q)
-        # print('qf1_loss',qf1_loss)
-        # print('qf2_loss',qf2_loss)
-        critic_loss =  qf1_loss + qf2_loss # FIX based on All Q-values
+        
+        critic_loss =  qf1_loss + qf2_loss
         # Use action to take the suitable Q value
         
         if print_flag:
@@ -245,18 +244,20 @@ class SACAgent(Agent):
         self, obs, full_obs, action, next_obs, not_done, logger,
         step, K=5, print_flag=True):
         
-        dist = self.actor.forward(next_obs)
+        output = self.actor.forward(next_obs)
         if self.action_type == 'Cont':
+            dist = output
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
         elif self.action_type == 'Discrete':
-            dist = self.categorical.proba_distribution(action_logits=dist)
-            next_action = dist.get_actions(deterministic=True)
-            log_prob = dist.distribution.logits.sum(0, keepdim=True)
+            action_probs = output
+            next_action = self.categorical.actions_from_params(action_logits=output)
+            z = action_probs == 0.0
+            z = z.float() * 1e-8
+            log_prob = torch.log(action_probs + z)
         
         target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
         target_V = torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_prob
-        #print('Target V= ',target_V.shape)
 
         # compute state entropy
         state_entropy = compute_state_entropy(obs, full_obs, k=K, action_type=self.action_type)
@@ -281,20 +282,23 @@ class SACAgent(Agent):
         target_Q = target_Q.detach()
 
         # get current Q estimates
+        # get current Q estimates
         current_Q1, current_Q2 = self.critic(obs, action)
-        #print('Curr Q1= ',current_Q1.shape)
-        #print('Curr Q2= ',current_Q2.shape)
-        #print('Target Q= ',target_Q.shape)
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q) # FIX based on All Q-values
+        current_Q1 = current_Q1.gather(1, action.long())
+        current_Q2 = current_Q2.gather(1, action.long())
+        
+        qf1_loss = F.mse_loss(current_Q1, target_Q)
+        qf2_loss = F.mse_loss(current_Q2, target_Q)
+        critic_loss =  qf1_loss + qf2_loss
         
         if print_flag:
             logger.log('train_critic/loss', critic_loss, step)
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
-        critic_loss.backward()
+        qf1_loss.backward(retain_graph=True)
+        qf2_loss.backward(retain_graph=True)
         self.critic_optimizer.step()
-
         self.critic.log(logger, step)
     
     def save(self, model_dir, step):
@@ -341,7 +345,7 @@ class SACAgent(Agent):
             inside_term = (self.alpha.detach() * log_prob) - actor_Q
             actor_loss = (action_probs*inside_term).sum(dim=1).mean()
             log_prob = torch.sum(log_prob * action_probs, dim=1)        # CHECK AGAIN
-            print('actor_loss', actor_loss)
+            #print('actor_loss', actor_loss)
             
         if print_flag:
             logger.log('train_actor/loss', actor_loss, step)
