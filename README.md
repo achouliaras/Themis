@@ -1,3 +1,4 @@
+![alt text](https://github.com/achouliaras/Themis/blob/main/logo.png)
 ## Install
 
 ```
