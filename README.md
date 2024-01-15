@@ -47,18 +47,18 @@ Experiments can be executed with the following scripts:
 Edit the files accordigly to specify changes in the experiment configuration.
 
 ## Learn reward
-To run experiment using a learned reward model set the flag '''learn_reward''' to True. Otherwise the environment reward will be used.
+To run experiment using a learned reward model set the flag `learn_reward` to True. Otherwise the environment reward will be used.
 
 ## Run experiments on human teachers
-Be sure to change the flag '''human_teacher''' to True.
-The method '''get_labels''' in the file '''reward_model.py''' contains the logic to generate clips ang receive input from the user. Explore the available tools from the '''lib/human_interface.py'''.
+Be sure to change the flag `human_teacher` to True.
+The method `get_labels` in the file `reward_model.py` contains the logic to generate clips ang receive input from the user. Explore the available tools from the `lib/human_interface.py`.
 
 ## Use explainable techniques
-To use the explainable techniques currently supported set either the '''xplain_action''' or '''xplain_state''' flag to True. Refer to '''lib/human_interface.py''' if you want to add more.
+To use the explainable techniques currently supported set either the `xplain_action` or `xplain_state` flag to True. Refer to `lib/human_interface.py` if you want to add more.
 
 ## Run experiments on synthetic teachers
 
-Themis is based on BPref, so it incorporates the same logic toward the synthetic teachers. To tweak the synthetic teacher tweak the relevant parameters in '''config/train_themis.py''':
+Themis is based on BPref, so it incorporates the same logic toward the synthetic teachers. To tweak the synthetic teacher tweak the relevant parameters in `config/train_themis.py`:
 
 ```
 teacher_beta: rationality constant of stochastic preference model (default: -1 for perfectly rational model)
