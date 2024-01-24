@@ -461,7 +461,7 @@ class Workspace(object):
                     gradient_update=self.cfg.gradient_update, 
                     policy_update=True)
             
-            # For State Explanation
+            # For Video generation
             if self.state_type == 'grid' or self.state_type == 'tabular':
                 env_snapshot = [] # Not yet supported
             elif self.state_type == 'grid':
@@ -506,8 +506,8 @@ class Workspace(object):
             else:
                 self.replay_buffer.add(obs, action, reward, next_obs, terminated, truncated)
 
-            # Save model checkpoint
-            if self.cfg.checkpoint_frec > 0 and self.step % self.cfg.checkpoint_frec == 0:
+            # Save model checkpoint for State Explanation
+            if self.cfg.xplain_state == True and self.step % self.cfg.checkpoint_frec == 0:
                 checkpoint_name = "-".join(["checkpoint", str(self.step) + ".pt"])
                 torch.save(
                     {

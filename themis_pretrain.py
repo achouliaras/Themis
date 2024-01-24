@@ -30,6 +30,10 @@ class Workspace(object):
         self.work_dir = work_dir
         print(f'Workspace: {self.work_dir}')
 
+        folder = work_dir / cfg.checkpoints_dir    
+        folder.mkdir(exist_ok=True, parents=True)
+        self.checkpoints_dir = cfg.checkpoints_dir
+        
         self.cfg = cfg
         self.logger = Logger(
             self.work_dir,
@@ -311,7 +315,7 @@ class Workspace(object):
                 #print('OK')
                 
             
-            # For State Explanation
+            # For Video generation
             if self.state_type == 'grid' or self.state_type == 'tabular':
                 env_snapshot = [] # Not yet supported
             elif self.state_type == 'grid':
@@ -343,6 +347,18 @@ class Workspace(object):
             self.reward_model.add_data(obs_flat, action, reward, terminated, truncated, env_snapshot)
             self.replay_buffer.add(obs, action, reward_hat, next_obs, terminated, truncated)
 
+            # Save model checkpoint for State Explanation
+            if self.cfg.xplain_state == True and self.step % self.cfg.checkpoint_frec == 0:
+                checkpoint_name = "-".join(["checkpoint", str(self.step) + ".pt"])
+                torch.save(
+                    {
+                        "epoch": self.step,
+                        "model_state_dict": self.agent.actor.state_dict(),
+                        "optimizer_state_dict": self.agent.actor_optimizer.state_dict()
+                    },
+                    os.path.join(self.checkpoints_dir, checkpoint_name),
+                )
+            
             obs = next_obs
             episode_step += 1
             self.step += 1

@@ -13,11 +13,11 @@ topK: 5
 # reward learning
 learn_reward: True
 segment: 120 #50
-activation: leaky_relu
+activation: tanh
 num_seed_steps: 1000 #1000
 num_interact: 4000
 reward_lr: 0.0003
-reward_batch: 128
+reward_batch: 50
 reward_update: 200
 feed_type: 0
 ensemble_size: 3
@@ -42,7 +42,7 @@ reward_model_capacity: 10000
 
 # evaluation config
 eval_frequency: 50 #10000
-num_eval_episodes: 10
+num_eval_episodes: 5
 device: cpu
 
 # logger
@@ -75,8 +75,8 @@ full_action_space: False
 #Xplain Params
 checkpoint_frec: 500 # No. of steps
 checkpoints_dir: checkpoints/${obs_type}/${env}/sac/
-xplain_action: True
-xplain_state: False
+xplain_action: False
+xplain_state: True
 
 # Snapshot
 #snapshots: [100000, 500000, 1000000, 2000000]

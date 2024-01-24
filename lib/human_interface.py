@@ -155,10 +155,10 @@ class Xplain:
         model.eval()
 
         #replay_dataset = DataLoader(dataset=replay_dataset, batch_size=500)
-
+        print(model.trunk)
         tracin_cp_fast = TracInCPFast(
             model=model,
-            final_fc_layer=model.trunk[4],
+            final_fc_layer=model.trunk[2],
             train_dataset=replay_dataset,  #From Replay buffer
             checkpoints=self.checkpoints_dir,
             checkpoints_load_func=self.checkpoints_load_func,

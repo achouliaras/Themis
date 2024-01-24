@@ -31,7 +31,7 @@ double_q_critic:
   action_type: 'Cont'
   policy: 'MLP'
   hidden_dim: 512
-  hidden_depth: 2
+  hidden_depth: 1
     
 diag_gaussian_actor:
   _target_: agent.actor.DiagGaussianActor
@@ -49,6 +49,6 @@ categorical_actor:
   action_dim: ${agent.action_dim}
   action_type: 'Discrete'
   policy: 'CNN'
-  hidden_depth: 2
+  hidden_depth: 1
   hidden_dim: 512
   log_std_bounds: [-5, 2]
