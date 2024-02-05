@@ -450,10 +450,13 @@ class RewardModel:
         sum_r_t_2 = np.sum(r_t_2, axis=1)
 
         if self.human_teacher or self.ui_module.debug:
-            clips1, xclips1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, snaps_1, copy.deepcopy(self.obs_space))
-            clips2, xclips2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, snaps_2, copy.deepcopy(self.obs_space))
-            self.ui_module.generate_paired_clips(clips1, xclips1, clips2, xclips2, 'TestPairClip', 'mp4')
+            clips1, xclips1, time_sum1 = self.ui_module.generate_frames(sa_t_1, self.env, self.seed, snaps_1, copy.deepcopy(self.obs_space))
+            clips2, xclips2, time_sum2 = self.ui_module.generate_frames(sa_t_2, self.env, self.seed, snaps_2, copy.deepcopy(self.obs_space))
+            time_sum3 = self.ui_module.generate_paired_clips(clips1, xclips1, clips2, xclips2, 'TestPairClip', 'mp4')
         
+            timesum =time_sum1+time_sum2+time_sum3
+            print('Elapsed time: ', timesum)
+
         if self.human_teacher:
             # Get human input
             labels =[]

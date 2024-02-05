@@ -2,7 +2,7 @@ import numpy as np
 import os
 from pathlib import Path
 import imageio
-import datetime
+import time
 import time
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
@@ -73,7 +73,8 @@ class Xplain:
         clips =[]
         clips_raw=[]
         xclips = []
-        
+        time_sum = 0
+
         #print(f'SA_T: {sa_t.shape}')
         for i, roll  in enumerate(sa_t):
             if self.debug and i==DEBUG_BATCH_SIZE:
@@ -115,6 +116,7 @@ class Xplain:
             clips.append(frames)
             clips_raw.append(obs)
 
+            start_time = time.time()
             # Create Saliency maps for each trajectory
             if self.xplain_action:
                 if self.action_type == 'Discrete':
@@ -124,7 +126,9 @@ class Xplain:
             if self.xplain_state:
                 xclip=self.influential_states(obs, actions, frames, replay_dataset)
                 xclips.append(xclip)
-        
+            elapsed_time = time.time() - start_time
+            time_sum += elapsed_time
+            
         #print(f'Clips {len(clips)}')
         #print(f'Xclips {len(xclips)}')
         
@@ -143,7 +147,7 @@ class Xplain:
             plt.savefig('Clips/ob.png')
             plot_attrb = False
 
-        return clips, xclips #clips_raw
+        return clips, xclips, time_sum #clips_raw
 
     def checkpoints_load_func(self, net, path):
         weights = torch.load(path)
@@ -168,8 +172,6 @@ class Xplain:
         )
         
         k = 6
-        start_time = datetime.datetime.now()
-        
         # Target or NN output dimension mismatch. No idea what is wrong.
 
         proponents_indices, proponents_influence_scores = tracin_cp_fast.influence(
@@ -330,6 +332,7 @@ class Xplain:
         scale = 256
         xflag = True if len(xframes1) + len(xframes2) > 0 else False
         kargs = { 'macro_block_size': None }
+        time_sum = 0
 
         clips1=[]
         for i, clip1 in enumerate(frames1):
@@ -338,6 +341,7 @@ class Xplain:
                 imageio.mimsave(p / filename, clip1, fps=fps, **kargs)
             clips1.append(VideoFileClip(str(p / filename)).margin(10).resize((scale, scale)))
         
+        start_time = time.time()
         if xflag:
             xclips1=[]
             for i, xclip1 in enumerate(xframes1):
@@ -345,6 +349,8 @@ class Xplain:
                 with open(p / filename, 'wb') as file1:
                     imageio.mimsave(p / filename, xclip1, fps=xfps)
                 xclips1.append(VideoFileClip(str(p / filename)).margin(10).resize((scale, scale)))
+        elapsed_time = time.time() - start_time
+        time_sum += elapsed_time
 
         clips2=[]
         for i, clip2 in enumerate(frames2):
@@ -353,6 +359,7 @@ class Xplain:
                 imageio.mimsave(p / filename, clip2, fps=fps, **kargs)
             clips2.append(VideoFileClip(str(p / filename)).margin(10).resize((scale, scale)))
         
+        start_time = time.time()
         if xflag:
             xclips2=[]
             for i, xclip2 in enumerate(xframes2):
@@ -375,17 +382,23 @@ class Xplain:
                 multiclip.write_videofile(str(p)+'/'+clipname + '_' + str(i+1) +'.' + format, threads=4, logger = None)
                 multiclip.close()
 
+        elapsed_time = time.time() - start_time
+        time_sum += elapsed_time
+
         [i.close() for i in clips1]
         [i.close() for i in clips2]
+        i=[os.remove(p / f'TESTclip1_{i}.mp4') for i, clip in enumerate(frames1)]
+        i=[os.remove(p / f'TESTclip2_{i}.mp4') for i, clip in enumerate(frames2)]
+        
+        start_time = time.time()
         if xflag:
             [i.close() for i in xclips2]
             [i.close() for i in xclips1]
-
-        i=[os.remove(p / f'TESTclip1_{i}.mp4') for i, clip in enumerate(frames1)]
-        i=[os.remove(p / f'TESTclip2_{i}.mp4') for i, clip in enumerate(frames2)]
-        if xflag:
             i=[os.remove(p / f'TESTxclip1_{i}.mp4') for i, clip in enumerate(xframes1)]
             i=[os.remove(p / f'TESTxclip2_{i}.mp4') for i, clip in enumerate(xframes2)]
+        elapsed_time = time.time() - start_time
+        time_sum += elapsed_time
+        return time_sum
 
     def get_batch_input_keyboad(self, input_size):
         # Get human input from keyboard as a string of the individual choices

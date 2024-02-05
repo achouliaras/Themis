@@ -24,7 +24,6 @@ import hydra
 from omegaconf import DictConfig
 from gymnasium.spaces import utils as gym_utils
 
-
 class Workspace(object):
     def __init__(self, cfg, work_dir):
         self.work_dir = work_dir
@@ -33,7 +32,7 @@ class Workspace(object):
         folder = work_dir / cfg.checkpoints_dir    
         folder.mkdir(exist_ok=True, parents=True)
         self.checkpoints_dir = cfg.checkpoints_dir
-        
+
         self.cfg = cfg
         self.logger = Logger(
             self.work_dir,
