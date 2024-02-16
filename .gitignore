@@ -42,6 +42,7 @@ exp/
 test_scripts/*
 figure/
 data/
+server_data/
 
 # Setuptools distribution and build folders.
 /dist/

@@ -305,6 +305,7 @@ class Workspace(object):
         train_acc = 0
         if self.labeled_feedback > 0:
             # update reward
+            start_time = time.time()
             for epoch in range(self.cfg.reward_update):
                 if self.cfg.label_margin > 0 or self.cfg.teacher_eps_equal > 0 or self.cfg.human_teacher == True:
                     train_acc = self.reward_model.train_soft_reward()
@@ -314,8 +315,10 @@ class Workspace(object):
                 
                 if total_acc > 0.97:
                     break
-                    
+            elapsed_time = time.time() - start_time        
             print("Reward function is updated!! ACC: " + str(total_acc))
+            print("Training time :", elapsed_time)
+            
         return labeled_queries
 
     def run(self):
@@ -416,6 +419,7 @@ class Workspace(object):
                             if self.reward_model.mb_size + self.total_feedback > self.cfg.max_feedback:
                                 self.reward_model.set_batch(self.cfg.max_feedback - self.total_feedback)
                                 
+                            
                             self.learn_reward()
                             self.replay_buffer.relabel_with_predictor(self.reward_model)
                             interact_count = 0
