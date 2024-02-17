@@ -130,3 +130,16 @@ class ReplayBuffer(object):
         full_obs = torch.as_tensor(full_obs, device=self.device)
         
         return obses, full_obs, actions, rewards, next_obses, not_dones, not_dones_no_max
+    
+    def save(self, model_dir, step):
+        keys_to_save = ['obses', 'next_obses', 'actions', 'rewards', 'not_dones', 'not_dones_no_max', 'idx']
+        payload = {k: self.__dict__[k] for k in keys_to_save}
+        torch.save(payload, '%s/replay_buffer%s.pt' % (model_dir, step), pickle_protocol=4)
+        
+    def load(self, model_dir, step):
+        keys_to_load = ['obses', 'next_obses', 'actions', 'rewards', 'not_dones', 'not_dones_no_max', 'idx']
+        payload = torch.load('%s/replay_buffer%s.pt' % (model_dir, step))
+        self.obses, self.next_obses, self.actions, self.rewards, self.not_dones, self.not_dones_no_max, self.idx = [payload[k] for k in keys_to_load]
+
+        self.idx = (self.idx + 1) % self.capacity
+        self.full = False or self.idx == 0

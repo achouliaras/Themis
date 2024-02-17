@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import copy
-import math
+#import torch.nn as nn
+#import torch.nn.functional as F
+#import copy
+#import math
 import os
-import sys
+#import sys
 from pathlib import Path
 import time
-import pickle as pkl
-import tqdm
-import copy
+#import pickle as pkl
+#import tqdm
+#import copy
 
 from lib.logger import Logger
 from agent.sac import SACAgent
-from lib.replay_buffer import ReplayBuffer
+#from lib.replay_buffer import ReplayBuffer
 from lib.reward_model import RewardModel
+from lib.replay_buffer import ReplayBuffer
 from collections import deque
 
 import logging
 import lib.utils as utils
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from gymnasium.spaces import utils as gym_utils
-from lib.human_interface import Xplain, ReplayDataset
+from lib.human_interface import Xplain
 
 log = logging.getLogger()
 
@@ -137,8 +138,8 @@ class Workspace(object):
             raise NotImplementedError
         
         payload = torch.load(snapshot)
-        keys_to_load = ['replay_buffer', 'step', 'episode']
-        self.replay_buffer, self.step, self.episode = [payload[k] for k in keys_to_load]
+        keys_to_load = ['step', 'episode']
+        self.step, self.episode = [payload[k] for k in keys_to_load]
 
         # Setup Agent
         self.agent = SACAgent(obs_space = self.obs_space,
@@ -167,6 +168,17 @@ class Workspace(object):
         
         self.agent.load(snapshot_dir, self.global_frame)
         
+        self.replay_buffer = ReplayBuffer(
+            self.obs_space,
+            self.obs_space_shape,
+            action_space,
+            self.action_type,
+            int(cfg.replay_buffer_capacity), 
+            self.device)
+        
+        self.replay_buffer.load(snapshot_dir, self.global_frame)
+
+
         ui_module= Xplain(self.agent, 
                           self.action_type, 
                           xplain_action = cfg.xplain_action, 
@@ -442,9 +454,9 @@ class Workspace(object):
                         frac = 1
                     self.reward_model.change_batch(frac)
                     # update margin --> not necessary / will be updated soon
-                    new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
-                    self.reward_model.set_teacher_thres_skip(new_margin)
-                    self.reward_model.set_teacher_thres_equal(new_margin)
+                    #new_margin = np.mean(avg_train_true_return) * (self.cfg.segment / self.env._max_episode_steps)
+                    #self.reward_model.set_teacher_thres_skip(new_margin)
+                    #self.reward_model.set_teacher_thres_equal(new_margin)
                     
                     # first learn reward
                     self.learn_reward(first_flag=1)
@@ -531,10 +543,11 @@ class Workspace(object):
         snapshot = snapshot_dir / f'snapshot_{self.global_frame}.pt'
         snapshot_dir.mkdir(exist_ok=True, parents=True)
         self.agent.save(snapshot_dir, self.global_frame)
+        self.replay_buffer.save(snapshot_dir, self.global_frame)
         # Check if reward model is used
         if self.cfg.learn_reward == True:
             self.reward_model.save(snapshot_dir, self.global_frame)
-        keys_to_save = ['replay_buffer', 'step', 'episode']
+        keys_to_save = ['step', 'episode']
         payload = {k: self.__dict__[k] for k in keys_to_save}
         torch.save(payload, snapshot, pickle_protocol=4)
         

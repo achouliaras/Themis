@@ -8,7 +8,7 @@ import math
 
 from collections import deque
 from gymnasium.wrappers.time_limit import TimeLimit
-from gymnasium.wrappers import NormalizeObservation, ResizeObservation, FrameStack
+from gymnasium.wrappers import NormalizeReward, ResizeObservation, FrameStack
 from minigrid.wrappers import RGBImgObsWrapper, ImgObsWrapper, FullyObsWrapper, PositionBonus
 from rlkit.envs.wrappers import NormalizedBoxEnv, NormalizePixelObs
 
@@ -120,7 +120,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode=None)
-    env = TimeLimit(RewindWrapper(ResizeObservation(env,64), cfg.domain), max_episode_steps = max_episode_steps)
+    env = NormalizeReward(TimeLimit(RewindWrapper(ResizeObservation(env,64), cfg.domain), max_episode_steps = max_episode_steps))
 
     eval_env =  gym.make(id=id, 
                         mode=cfg.mode, 
@@ -130,7 +130,7 @@ def make_atari_env(cfg, render_mode=None):
                         repeat_action_probability=cfg.repeat_action_probability,
                         full_action_space=cfg.full_action_space,
                         render_mode = render_mode)
-    eval_env = TimeLimit(ResizeObservation(eval_env,64), max_episode_steps = max_episode_steps)
+    eval_env = NormalizeReward(TimeLimit(ResizeObservation(eval_env,64), max_episode_steps = max_episode_steps))
     
     if cfg.human_teacher or cfg.debug:
         sim_env = gym.make(id=id, 
@@ -141,7 +141,7 @@ def make_atari_env(cfg, render_mode=None):
                    repeat_action_probability=cfg.repeat_action_probability,
                    full_action_space=cfg.full_action_space,
                    render_mode='rgb_array')
-        sim_env = TimeLimit(RewindWrapper(ResizeObservation(sim_env,64), cfg.domain), max_episode_steps = max_episode_steps)
+        sim_env = NormalizeReward(TimeLimit(RewindWrapper(ResizeObservation(sim_env,64), cfg.domain), max_episode_steps = max_episode_steps))
 
     return env, eval_env, sim_env
 

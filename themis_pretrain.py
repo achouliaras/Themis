@@ -370,11 +370,12 @@ class Workspace(object):
 
     def save_snapshot(self):
         snapshot_dir = self.cfg.snapshot_dir        
-        snapshot = snapshot_dir / f'snapshot_{self.global_frame}.pt'
         snapshot_dir.mkdir(exist_ok=True, parents=True)
         self.agent.save(snapshot_dir, self.global_frame)
+        self.replay_buffer.save(snapshot_dir, self.global_frame)
         self.reward_model.save(snapshot_dir, self.global_frame)
-        keys_to_save = ['replay_buffer', 'step', 'episode']
+        snapshot = snapshot_dir / f'snapshot_{self.global_frame}.pt'
+        keys_to_save = ['step', 'episode']
         payload = {k: self.__dict__[k] for k in keys_to_save}
         torch.save(payload, snapshot, pickle_protocol=4)
         

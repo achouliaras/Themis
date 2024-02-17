@@ -242,7 +242,7 @@ class Xplain:
         #                         torch.cat((torch.full((16,16,3), 3), torch.full((16,16,3), 7), torch.full((16,16,3), 11), torch.full((16,16,3), 15)),0)),1)
 
         for ob, act, frm in zip(obs, actions, frames):
-            attribution = xai.attribute(torch.tensor(ob).unsqueeze(0).to(self.agent.device), 
+            attribution = xai.attribute(torch.tensor(ob, dtype = torch.float32).unsqueeze(0).to(self.agent.device), 
                                       target = int(act[0])# , feature_mask= feature_mask,
                                       ).squeeze(0).cpu().detach().numpy()
             #print(attribution.shape)

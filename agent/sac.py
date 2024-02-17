@@ -151,7 +151,7 @@ class SACAgent(Agent):
     
     def reset_actor(self):
         # reset log_alpha
-        self.log_alpha = torch.tensor(np.log(self.init_temperature)).to(self.device)
+        self.log_alpha = torch.tensor(np.log(self.init_temperature), dtype=torch.float32).to(self.device)
         self.log_alpha.requires_grad = True
         self.log_alpha_optimizer = torch.optim.Adam(
             [self.log_alpha],

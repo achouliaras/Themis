@@ -12,21 +12,21 @@ topK: 5
 
 # reward learning
 learn_reward: True
-segment: 120 #50
+segment: 50
 activation: tanh
-num_seed_steps: 1000 #1000
-num_interact: 4000
-reward_lr: 0.0003
-reward_batch: 50
-reward_update: 200
-feed_type: 0
+num_seed_steps: 1000 # Steps that the agent does random actions to fill the buffers
+num_interact: 4000 # After how many steps we retrain the reward model
+reward_lr: 0.003
+reward_batch: 50 # How many segments will be generated for human input
+reward_update: 200 # How many epochs the reward model is training for
+feed_type: 0 # the sampling method used
 ensemble_size: 3
-max_feedback: 1400
+max_feedback: 1400 # Max total number of interactions (incremented by reward_batch)
 large_batch: 10
 label_margin: 0.0
 reward_scale: 1.0
 reward_intercept: 0.0
-human_teacher: False
+human_teacher: False # Use human input on True, uses synthetic feedback on False
 teacher_beta: -1    # Rationality Constant 0 leads to random choices and infinite (-1) to perfectly rational
 teacher_gamma: 1    # Discound Factor for myopic behavior paying more attention on recent states
 teacher_eps_mistake: 0  # Probability of mistake
@@ -41,16 +41,16 @@ replay_buffer_capacity: 10000
 reward_model_capacity: 10000
 
 # evaluation config
-eval_frequency: 50 #10000
-num_eval_episodes: 5
+eval_frequency: 100 #10000
+num_eval_episodes: 10
 device: cpu
 
 # logger
-log_frequency: 10000
+log_frequency: 10
 log_save_tb: true
 
 # video recorder
-save_video: false
+save_video: true
 
 # setups
 seed: 1
@@ -73,10 +73,10 @@ repeat_action_probability: 0.25
 full_action_space: False
 
 #Xplain Params
-checkpoint_frec: 500 # No. of steps
+checkpoint_frec: 500 # No. of steps to 
 checkpoints_dir: checkpoints/${obs_type}/${env}/sac/
 xplain_action: False
-xplain_state: True
+xplain_state: False
 
 # Snapshot
 #snapshots: [100000, 500000, 1000000, 2000000]
