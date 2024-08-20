@@ -127,9 +127,10 @@ class CategoricalActor(nn.Module):
         for k, v in self.outputs.items():
             logger.log_histogram(f'train_actor/{k}_hist', v, step)
 
-        for l, n in enumerate(self.cnn):
-            if type(n) == nn.Conv2d:
-                logger.log_param(f'train_actor/conv{l}', n, step)
+        if self.policy == 'CNN':
+            for l, n in enumerate(self.cnn):
+                if type(n) == nn.Conv2d:
+                    logger.log_param(f'train_actor/conv{l}', n, step)
 
         for i, m in enumerate(self.trunk):
             if type(m) == nn.Linear:
