@@ -2,7 +2,7 @@
 
 Themis is an open-source testing & evaluation framework for Reinforcement Learning experiments using PyTorch. It supports many famous environments and can automatically set up the RL algorithm for continuous or discrete action spaces with minimal intervention from the user. You can specify Themis to train a reward model from human preferences using our web-based crowdsourcing platform, making it ideal for experiments with interactive nature. It is also designed with explainability in mind and offers 3 ready-to-play methods from Captum.
 
-This repo contains the RLHF system. For our web-based croudsourcing platform visit: [https://anonymous.4open.science/r/rlhf_crowdsourcing_platform-B862](https://anonymous.4open.science/r/rlhf_crowdsourcing_platform-B862) (Open in new tab).
+This repo contains the RLHF system. For our web-based croudsourcing platform visit: [https://github.com/lukeconnolly2/rlhf_crowdsourcing_platform](https://github.com/lukeconnolly2/rlhf_crowdsourcing_platform) (Open in new tab).
 ## Install the following modules to use Themis
 
 ```
